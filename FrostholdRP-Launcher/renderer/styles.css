@@ -1,0 +1,705 @@
+/* FrostholdRP — UI angelehnt am Wappen: Nachtblau, Silber, Bernstein-Fensterlicht */
+
+:root {
+  --fh-night: #05070d;
+  --fh-night-mid: #0a0e16;
+  --fh-night-soft: #0f1520;
+  --fh-silver: rgba(195, 208, 220, 0.55);
+  --fh-silver-dim: rgba(140, 155, 175, 0.35);
+  --fh-ice: #c8dae8;
+  --fh-ice-muted: #8fa6bc;
+  --fh-amber: #e8a54a;
+  --fh-amber-deep: #b8732a;
+  --fh-amber-glow: rgba(232, 165, 74, 0.45);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: var(--fh-night);
+  color: var(--fh-ice);
+  overflow: hidden;
+  user-select: none;
+}
+
+/* —— Titelleiste: schweres „Metall“, wie Schild-Rand —— */
+.titlebar {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  background: linear-gradient(180deg, #121820 0%, #0a0d14 100%);
+  border-bottom: 1px solid var(--fh-silver-dim);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+  -webkit-app-region: drag;
+}
+
+.titlebar button,
+.titlebar .nav-link:not(.disabled) {
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.logo-img {
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid var(--fh-silver-dim);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    0 4px 14px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.logo-fallback {
+  width: 44px;
+  height: 44px;
+  background: linear-gradient(145deg, #3a4555, #1e2633);
+  border-radius: 6px;
+  border: 1px solid var(--fh-silver-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.brand {
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  font-size: 15px;
+  color: var(--fh-ice);
+  text-shadow: 0 0 24px rgba(200, 218, 232, 0.25);
+}
+
+.titlebar-nav {
+  display: flex;
+  gap: 26px;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.nav-link {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: var(--fh-ice-muted);
+  cursor: default;
+}
+
+.nav-link.disabled {
+  opacity: 0.32;
+}
+
+.titlebar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+
+.tb-btn {
+  background: transparent;
+  border: none;
+  color: var(--fh-ice-muted);
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.tb-btn:hover:not(:disabled) {
+  background: rgba(232, 165, 74, 0.1);
+  color: var(--fh-ice);
+}
+
+.tb-btn.disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.tb-icon {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 4px;
+  vertical-align: middle;
+  opacity: 0.85;
+}
+
+.gear::before {
+  content: "⚙";
+}
+
+.user::before {
+  content: "👤";
+  font-size: 12px;
+}
+
+/* —— Hero: Nacht-Himmel, Aurora, Berge — Wappen nur im Rahmen rechts —— */
+.hero {
+  position: relative;
+  height: 340px;
+  overflow: hidden;
+}
+
+.hero-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 120% 80% at 50% -20%, #1a2840 0%, transparent 55%),
+    radial-gradient(ellipse 80% 50% at 100% 30%, rgba(40, 65, 95, 0.45) 0%, transparent 50%),
+    radial-gradient(ellipse 70% 45% at 0% 60%, rgba(25, 45, 70, 0.35) 0%, transparent 45%),
+    linear-gradient(165deg, #0c1524 0%, #05070d 45%, #020308 100%);
+}
+
+.hero-aurora {
+  position: absolute;
+  inset: 0;
+  opacity: 0.55;
+  background:
+    radial-gradient(ellipse 60% 35% at 70% 15%, rgba(120, 180, 220, 0.15) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 30% at 20% 25%, rgba(80, 140, 190, 0.12) 0%, transparent 65%);
+  animation: aurora-shift 18s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+@keyframes aurora-shift {
+  0% {
+    opacity: 0.45;
+    transform: translateX(0) scale(1);
+  }
+  100% {
+    opacity: 0.6;
+    transform: translateX(-2%) scale(1.02);
+  }
+}
+
+/* Boden-Silhouette (Berge) */
+.hero-silhouette {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 42%;
+  background:
+    linear-gradient(to top, #020308 0%, transparent 100%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 120' preserveAspectRatio='none'%3E%3Cpath fill='%23080c12' d='M0 120 L0 85 L80 55 L160 75 L240 40 L320 65 L400 35 L480 60 L560 30 L640 55 L720 25 L800 50 L880 20 L960 45 L1040 28 L1120 48 L1200 35 L1200 120 Z'/%3E%3C/svg%3E")
+      center bottom / 100% 100% no-repeat;
+  opacity: 0.95;
+  pointer-events: none;
+}
+
+.hero-vignette {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 100% 70% at 50% 100%, rgba(2, 3, 8, 0.85) 0%, transparent 50%),
+    linear-gradient(90deg, rgba(3, 5, 10, 0.92) 0%, rgba(3, 5, 10, 0.25) 42%, rgba(3, 5, 10, 0.15) 55%, rgba(3, 5, 10, 0.55) 100%),
+    linear-gradient(180deg, rgba(5, 8, 14, 0.4) 0%, transparent 40%);
+  pointer-events: none;
+}
+
+.hero-stars {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(1.5px 1.5px at 8% 12%, rgba(255, 255, 255, 0.9), transparent),
+    radial-gradient(1px 1px at 18% 28%, rgba(255, 255, 255, 0.55), transparent),
+    radial-gradient(1px 1px at 32% 8%, rgba(255, 255, 255, 0.7), transparent),
+    radial-gradient(1.2px 1.2px at 45% 22%, rgba(255, 255, 255, 0.5), transparent),
+    radial-gradient(1px 1px at 12% 45%, rgba(255, 255, 255, 0.45), transparent),
+    radial-gradient(1.5px 1.5px at 28% 52%, rgba(255, 255, 255, 0.6), transparent),
+    radial-gradient(1px 1px at 52% 38%, rgba(255, 255, 255, 0.4), transparent),
+    radial-gradient(1px 1px at 88% 18%, rgba(255, 255, 255, 0.5), transparent),
+    radial-gradient(1.2px 1.2px at 72% 8%, rgba(255, 255, 255, 0.65), transparent);
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.hero-stars::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.1;
+  background:
+    linear-gradient(32deg, transparent 48%, rgba(255, 255, 255, 0.85) 49%, rgba(255, 255, 255, 0.85) 51%, transparent 52%),
+    linear-gradient(-18deg, transparent 62%, rgba(255, 255, 255, 0.65) 63%, rgba(255, 255, 255, 0.65) 65%, transparent 66%);
+  background-size: 200px 130px, 240px 150px;
+  background-position: 12% 12%, 28% 6%;
+  background-repeat: no-repeat;
+}
+
+.hero-snow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.28;
+  background-image:
+    radial-gradient(1px 1px at 10% 10%, rgba(255, 255, 255, 0.65), transparent),
+    radial-gradient(1px 1px at 30% 40%, rgba(255, 255, 255, 0.5), transparent),
+    radial-gradient(1px 1px at 70% 60%, rgba(255, 255, 255, 0.55), transparent);
+  background-size: 100% 100%;
+  animation: snow-drift 14s linear infinite;
+}
+
+@keyframes snow-drift {
+  0% {
+    transform: translateY(0);
+    opacity: 0.28;
+  }
+  50% {
+    opacity: 0.34;
+  }
+  100% {
+    transform: translateY(10px);
+    opacity: 0.28;
+  }
+}
+
+.hero-content {
+  position: relative;
+  z-index: 2;
+  padding: 20px 28px 24px;
+  height: 100%;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 24px;
+}
+
+.hero-left {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 22px;
+  min-width: 0;
+}
+
+.hero-crest-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.hero-crest-frame {
+  padding: 10px;
+  background: linear-gradient(145deg, rgba(35, 45, 58, 0.75) 0%, rgba(12, 16, 24, 0.9) 100%);
+  border: 1px solid rgba(180, 195, 215, 0.35);
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    0 12px 40px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.hero-crest-img {
+  display: block;
+  width: min(240px, 28vw);
+  height: auto;
+  max-height: 220px;
+  object-fit: contain;
+  border-radius: 6px;
+  filter: saturate(1.05) drop-shadow(0 4px 20px rgba(0, 0, 0, 0.5));
+}
+
+.hero-crest-caption {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.35em;
+  text-transform: uppercase;
+  color: var(--fh-ice-muted);
+  opacity: 0.85;
+}
+
+.hero-tagline {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.85);
+}
+
+.hero-tagline-main {
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 700;
+  font-size: 28px;
+  letter-spacing: 0.18em;
+  color: #e8f0f8;
+  text-shadow:
+    0 0 28px rgba(180, 205, 230, 0.35),
+    0 2px 8px rgba(0, 0, 0, 0.85);
+}
+
+.hero-tagline-sub {
+  font-size: 11px;
+  letter-spacing: 0.42em;
+  color: var(--fh-ice-muted);
+  padding-left: 2px;
+}
+
+.server-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: rgba(8, 10, 16, 0.82);
+  border: 1px solid var(--fh-silver);
+  border-radius: 999px;
+  font-size: 13px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.server-pill .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #888;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.server-pill.online .dot {
+  background: #4ecf8a;
+  color: #4ecf8a;
+}
+
+.server-pill.offline .dot {
+  background: #c94a4a;
+  color: #c94a4a;
+}
+
+.player-count {
+  color: var(--fh-ice-muted);
+  font-size: 12px;
+}
+
+.news-section {
+  padding: 14px 28px 22px;
+  background: linear-gradient(180deg, var(--fh-night) 0%, #070a10 100%);
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.news-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 14px;
+}
+
+.news-head h2 {
+  margin: 0;
+  font-family: Georgia, serif;
+  font-size: 17px;
+  letter-spacing: 0.1em;
+  color: var(--fh-ice);
+}
+
+.more-link {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--fh-ice-muted);
+}
+
+.more-link.disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+
+.news-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+.news-card {
+  background: linear-gradient(160deg, #121820 0%, #0a0d12 100%);
+  border: 1px solid var(--fh-silver-dim);
+  border-radius: 10px;
+  padding: 16px;
+  min-height: 112px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.news-card .badge {
+  display: inline-block;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  padding: 3px 8px;
+  border-radius: 4px;
+  margin-bottom: 10px;
+}
+
+.badge-ANKUENDIGUNG {
+  background: rgba(60, 160, 110, 0.22);
+  color: #7ee0b8;
+}
+
+.badge-EVENT {
+  background: rgba(232, 165, 74, 0.18);
+  color: var(--fh-amber);
+}
+
+.badge-UPDATE {
+  background: rgba(120, 150, 185, 0.2);
+  color: #a8c4e8;
+}
+
+.news-card h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--fh-ice);
+}
+
+.news-card .date {
+  font-size: 12px;
+  color: var(--fh-ice-muted);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 28px 20px;
+  border-top: 1px solid var(--fh-silver-dim);
+  background: #04060a;
+}
+
+.footer-left {
+  font-size: 12px;
+  color: var(--fh-ice-muted);
+}
+
+.footer-left .sep {
+  margin: 0 12px;
+  opacity: 0.35;
+}
+
+.footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* „Aktualisieren“: silbrig, technisch — nicht der Spiel-Start */
+.update-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 28px;
+  font-family: Georgia, serif;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #dce6f0;
+  background: linear-gradient(180deg, #2a3545 0%, #1a222e 100%);
+  border: 1px solid var(--fh-silver);
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow:
+    0 4px 18px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.update-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+  border-color: rgba(200, 215, 230, 0.55);
+}
+
+.update-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.update-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.2);
+}
+
+.update-icon {
+  display: inline-block;
+  font-size: 18px;
+  line-height: 1;
+  opacity: 0.95;
+}
+
+/* Bernstein wie Schloss-Fensterlicht */
+.play-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 38px;
+  font-family: Georgia, serif;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #1a0f06;
+  background: linear-gradient(180deg, #f0b85c 0%, var(--fh-amber) 35%, var(--fh-amber-deep) 100%);
+  border: 1px solid rgba(255, 220, 160, 0.35);
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow:
+    0 0 24px var(--fh-amber-glow),
+    0 6px 20px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.play-btn:hover {
+  filter: brightness(1.06);
+  box-shadow:
+    0 0 32px var(--fh-amber-glow),
+    0 6px 24px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.play-btn:active {
+  transform: scale(0.98);
+}
+
+.play-btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.play-arrow {
+  font-size: 14px;
+}
+
+/* display:flex würde sonst das HTML-Attribut hidden übersteuern → Modal immer sichtbar */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 4, 8, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.overlay[hidden] {
+  display: none !important;
+}
+
+.modal {
+  width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: linear-gradient(180deg, #121820 0%, #0a0d12 100%);
+  border: 1px solid var(--fh-silver);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+}
+
+.modal h3 {
+  margin: 0 0 12px;
+  font-family: Georgia, serif;
+  color: var(--fh-ice);
+}
+
+.modal .hint {
+  font-size: 12px;
+  color: var(--fh-ice-muted);
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.modal .hint-sub {
+  margin-bottom: 16px;
+  opacity: 0.95;
+}
+
+.label-optional {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 11px;
+  color: var(--fh-ice-muted);
+}
+
+.modal label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fh-ice-muted);
+  margin-top: 12px;
+  margin-bottom: 4px;
+}
+
+.modal input {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--fh-night);
+  border: 1px solid var(--fh-silver-dim);
+  border-radius: 6px;
+  color: var(--fh-ice);
+  font-size: 13px;
+}
+
+.modal input:focus {
+  outline: none;
+  border-color: rgba(232, 165, 74, 0.45);
+  box-shadow: 0 0 0 1px rgba(232, 165, 74, 0.2);
+}
+
+.modal-actions {
+  margin-top: 20px;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.modal-actions button {
+  padding: 8px 18px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+#set-save {
+  background: linear-gradient(180deg, #5a6575 0%, #3d4655 100%);
+  color: var(--fh-ice);
+  border: 1px solid var(--fh-silver-dim);
+}
+
+#set-save:hover {
+  filter: brightness(1.08);
+}
+
+#set-cancel {
+  background: transparent;
+  color: var(--fh-ice-muted);
+  border: 1px solid var(--fh-silver-dim);
+}
+
+.toast {
+  position: fixed;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 24px;
+  background: rgba(12, 16, 24, 0.96);
+  border: 1px solid var(--fh-silver);
+  border-radius: 8px;
+  z-index: 200;
+  max-width: 80%;
+  text-align: center;
+  font-size: 13px;
+  color: var(--fh-ice);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}

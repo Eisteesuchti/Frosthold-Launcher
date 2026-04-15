@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; connect-src https: http:;" />
+  <title>FrostholdRP</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="titlebar" id="drag-region">
+    <div class="titlebar-left">
+      <img src="../assets/logo.png" alt="" class="logo-img" id="logo-img" width="40" height="40" />
+      <span class="brand">FROSTHOLDRP</span>
+    </div>
+    <nav class="titlebar-nav">
+      <span class="nav-link disabled" data-url="">WEBSITE</span>
+      <span class="nav-link disabled" data-url="">DISCORD</span>
+      <span class="nav-link disabled" data-url="">PATREON</span>
+    </nav>
+    <div class="titlebar-right">
+      <button type="button" class="tb-btn disabled" disabled title="Geplant v0.2">
+        <span class="tb-icon user"></span> Einloggen
+      </button>
+      <button type="button" class="tb-btn" id="btn-settings" title="Einstellungen">
+        <span class="tb-icon gear"></span>
+      </button>
+      <button type="button" class="tb-btn" id="btn-min" title="Minimieren">&#8211;</button>
+      <button type="button" class="tb-btn" id="btn-close" title="Schließen">&#10005;</button>
+    </div>
+  </div>
+
+  <main class="hero">
+    <div class="hero-bg" aria-hidden="true"></div>
+    <div class="hero-aurora" aria-hidden="true"></div>
+    <div class="hero-silhouette" aria-hidden="true"></div>
+    <div class="hero-vignette" aria-hidden="true"></div>
+    <div class="hero-stars" aria-hidden="true"></div>
+    <div class="hero-snow" aria-hidden="true"></div>
+    <div class="hero-content">
+      <div class="hero-left">
+        <div class="hero-tagline">
+          <span class="hero-tagline-main">FROSTHOLD</span>
+          <span class="hero-tagline-sub">ROLEPLAY</span>
+        </div>
+        <div class="server-pill" id="server-pill">
+          <span class="dot" id="status-dot"></span>
+          <span id="status-text">PRÜFE…</span>
+          <span class="player-count" id="player-count"></span>
+        </div>
+      </div>
+      <div class="hero-crest-panel">
+        <div class="hero-crest-frame">
+          <img src="../assets/logo.png" alt="" class="hero-crest-img" id="hero-crest-img" width="280" height="280" />
+        </div>
+        <p class="hero-crest-caption">Frosthold</p>
+      </div>
+    </div>
+  </main>
+
+  <section class="news-section">
+    <div class="news-head">
+      <h2>NEUIGKEITEN</h2>
+      <span class="more-link disabled">MEHR LESEN</span>
+    </div>
+    <div class="news-cards" id="news-cards"></div>
+  </section>
+
+  <footer class="footer">
+    <div class="footer-left">
+      <span>SPIELVERSION: <strong>0.1 Alpha</strong></span>
+      <span class="sep">|</span>
+      <span>SERVER: <strong>ROLEPLAY</strong></span>
+    </div>
+    <div class="footer-actions">
+      <button type="button" class="update-btn" id="btn-update" title="SKSE und Client-Dateien prüfen und installieren">
+        <span class="update-icon" aria-hidden="true">&#8635;</span>
+        <span id="btn-update-label">Aktualisieren</span>
+      </button>
+      <button type="button" class="play-btn" id="btn-play" hidden>
+        <span>SPIELEN</span>
+        <span class="play-arrow">&#9654;</span>
+      </button>
+    </div>
+  </footer>
+
+  <div class="overlay" id="settings-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="modal">
+      <h3 id="settings-title">Einstellungen</h3>
+      <p class="hint">Skyrim wird automatisch über Steam gefunden. Zum Spielen wird <strong>skse64_loader.exe</strong> gestartet (SkyMP), nicht die normale Skyrim-EXE. Der Server-Port ist fest <strong>7777</strong> (Standard).</p>
+      <p class="hint hint-sub">Deine <strong>Profil-ID</strong> für den Server wird später beim Einloggen vergeben — bis dahin nutzt der Client die Standard-ID.</p>
+      <label>Server-Adresse</label>
+      <input type="text" id="set-ip" autocomplete="off" />
+      <label>Skyrim SE Ordner <span class="label-optional">(nur nötig, wenn die Auto-Erkennung fehlschlägt)</span></label>
+      <input type="text" id="set-skyrim" placeholder="Leer lassen = automatisch" />
+      <div class="modal-actions">
+        <button type="button" id="set-save">Speichern</button>
+        <button type="button" id="set-cancel">Schließen</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

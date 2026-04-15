@@ -1,0 +1,14 @@
+# Lokale Launcher-Config (Server-IP, Download-URL, etc.)
+frostmp-launcher.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Electron / Node
+FrostholdRP-Launcher/node_modules/
+FrostholdRP-Launcher/dist-build/
+
+# Eigenes Skyrim-/Build-Repo (separates Git in ./Frosthold/)
+Frosthold/

@@ -1,0 +1,21 @@
+{
+  "name": "frostholdrp-launcher",
+  "version": "0.1.0",
+  "description": "FrostholdRP Skyrim Multiplayer Launcher",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.frostholdrp.launcher",
+    "productName": "FrostholdRP Launcher",
+    "directories": { "output": "dist-build" },
+    "files": ["main.js", "preload.js", "renderer/**/*", "assets/**/*", "news.json", "launcher-bundled-defaults.json"],
+    "win": { "target": ["portable"] }
+  }
+}

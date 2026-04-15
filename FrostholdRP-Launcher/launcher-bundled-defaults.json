@@ -1,0 +1,6 @@
+{
+  "_info": "Vor dem Verteilen: client_dist_source auf die oeffentliche HTTPS-URL eurer Client-ZIP setzen (einmalig).",
+  "server_ip": "188.245.77.170",
+  "status_url": "http://188.245.77.170:3000/",
+  "client_dist_source": ""
+}
