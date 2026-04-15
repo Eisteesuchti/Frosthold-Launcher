@@ -2,10 +2,16 @@
   "name": "frostholdrp-launcher",
   "version": "0.1.0",
   "description": "FrostholdRP Skyrim Multiplayer Launcher",
+  "author": "FrostholdRP",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "pack": "electron-builder --win portable"
+    "prepare-runtime": "node scripts/prepare-python-runtime.mjs",
+    "pack": "npm run prepare-runtime && electron-builder --win portable --x64",
+    "installer": "npm run prepare-runtime && electron-builder --win nsis --x64",
+    "dist": "npm run prepare-runtime && electron-builder --win nsis portable --x64",
+    "dist:installer": "npm run prepare-runtime && electron-builder --win nsis --x64",
+    "dist:portable": "npm run prepare-runtime && electron-builder --win portable --x64"
   },
   "devDependencies": {
     "electron": "^33.2.0",
@@ -15,7 +21,37 @@
     "appId": "com.frostholdrp.launcher",
     "productName": "FrostholdRP Launcher",
     "directories": { "output": "dist-build" },
-    "files": ["main.js", "preload.js", "renderer/**/*", "assets/**/*", "news.json", "launcher-bundled-defaults.json"],
-    "win": { "target": ["portable"] }
+    "files": ["main.js", "preload.js", "renderer/**/*", "assets/**/*", "news.json", "launcher-bundled-defaults.json", "frosthold-manifest.json"],
+    "extraResources": [
+      { "from": "../FrostMP-Launcher.py", "to": "." },
+      { "from": "../frostmp_core.py", "to": "." },
+      { "from": "../frostmp_gui.py", "to": "." },
+      { "from": "launcher-bundled-defaults.json", "to": "." },
+      { "from": "python-runtime", "to": "python-runtime" }
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "assets/logo.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "installerLanguages": ["de_DE", "en_US"],
+      "language": "1031",
+      "include": "build/nsis-installer.nsh",
+      "runAfterFinish": true,
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": true,
+      "shortcutName": "FrostholdRP Launcher",
+      "uninstallDisplayName": "FrostholdRP Launcher",
+      "artifactName": "Frosthold-Installer-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "FrostholdRP-Launcher-${version}-portable.exe"
+    }
   }
 }

@@ -9,6 +9,7 @@ __pycache__/
 # Electron / Node
 FrostholdRP-Launcher/node_modules/
 FrostholdRP-Launcher/dist-build/
+FrostholdRP-Launcher/python-runtime/
 
 # Eigenes Skyrim-/Build-Repo (separates Git in ./Frosthold/)
 Frosthold/

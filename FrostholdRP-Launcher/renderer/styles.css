@@ -26,6 +26,87 @@ body {
   user-select: none;
 }
 
+/* Schnellprüfung + Update-Richtlinie */
+.quick-check-strip {
+  border-bottom: 1px solid var(--fh-silver-dim);
+  background: linear-gradient(90deg, rgba(25, 40, 58, 0.95) 0%, rgba(10, 14, 22, 0.98) 100%);
+  padding: 10px 20px 12px;
+  flex-shrink: 0;
+}
+
+.quick-check-strip[hidden] {
+  display: none !important;
+}
+
+.quick-check-inner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  max-width: 100%;
+}
+
+.quick-check-icon {
+  color: var(--fh-amber);
+  font-size: 12px;
+  line-height: 1.6;
+  opacity: 0.9;
+}
+
+.quick-check-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--fh-ice);
+}
+
+.quick-check-text strong {
+  display: block;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fh-ice-muted);
+  margin-bottom: 4px;
+}
+
+.quick-check-dismiss {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--fh-ice-muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.quick-check-dismiss:hover {
+  color: var(--fh-ice);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.policy-hint {
+  margin: 10px 0 0 28px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--fh-ice-muted);
+  opacity: 0.92;
+  max-width: 1100px;
+}
+
+.quick-check-strip.state-ok .quick-check-icon {
+  color: #5ecf9a;
+}
+
+.quick-check-strip.state-warn .quick-check-icon {
+  color: var(--fh-amber);
+}
+
+.quick-check-strip.state-bad .quick-check-icon {
+  color: #e07070;
+}
+
 /* —— Titelleiste: schweres „Metall“, wie Schild-Rand —— */
 .titlebar {
   height: 52px;

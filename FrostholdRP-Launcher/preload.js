@@ -11,4 +11,7 @@ contextBridge.exposeInMainWorld('fh', {
   play: () => ipcRenderer.invoke('play'),
   getPaths: () => ipcRenderer.invoke('get-paths'),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  quickHealthCheck: () => ipcRenderer.invoke('quick-health-check'),
+  appMeta: () => ipcRenderer.invoke('app-meta'),
+  createDesktopShortcut: () => ipcRenderer.invoke('create-desktop-shortcut'),
 });

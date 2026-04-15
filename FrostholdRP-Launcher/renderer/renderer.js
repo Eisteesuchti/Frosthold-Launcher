@@ -84,6 +84,73 @@ function showToast(msg, ms = 5000) {
   setTimeout(() => { el.hidden = true; }, ms);
 }
 
+async function runQuickHealthCheck() {
+  const strip = $('quick-check-strip');
+  const titleEl = $('quick-check-title');
+  const msgEl = $('quick-check-msg');
+  const policyEl = $('policy-hint');
+  const iconEl = $('quick-check-icon');
+  if (!strip || sessionStorage.getItem('fh-quickcheck-dismiss') === '1') return;
+
+  titleEl.textContent = 'Schnellprüfung';
+  msgEl.textContent = 'Prüfe Installation und Server-Client…';
+  strip.hidden = false;
+  strip.classList.remove('state-ok', 'state-warn', 'state-bad');
+  strip.classList.add('state-warn');
+  policyEl.textContent = '';
+
+  let h;
+  try {
+    h = await fh.quickHealthCheck();
+  } catch (e) {
+    msgEl.textContent = `Prüfung fehlgeschlagen: ${e}`;
+    strip.classList.add('state-bad');
+    return;
+  }
+
+  const md = h.manifest && h.manifest.ok ? h.manifest.data : null;
+  if (md && md.policyDe && md.policyDe.body) {
+    policyEl.textContent = md.policyDe.body;
+  }
+
+  const s = h.status;
+  const qd = md && md.quickCheckDe ? md.quickCheckDe : {};
+  if (!s || s.error === 'bad_json') {
+    msgEl.textContent = 'Python-Backend antwortet nicht. Die Runtime liegt im Launcher—bei fehlenden Dateien Neuinstallation versuchen.';
+    strip.classList.remove('state-warn');
+    strip.classList.add('state-bad');
+    iconEl.textContent = '✕';
+    return;
+  }
+  if (s.error) {
+    msgEl.textContent = String(s.error);
+    strip.classList.remove('state-warn');
+    strip.classList.add('state-bad');
+    iconEl.textContent = '✕';
+    return;
+  }
+
+  if (!s.skyrim_effective) {
+    msgEl.textContent = qd.noSkyrim || 'Skyrim SE nicht gefunden.';
+    strip.classList.remove('state-warn');
+    strip.classList.add('state-bad');
+    iconEl.textContent = '!';
+    return;
+  }
+
+  if (s.ready_to_play) {
+    msgEl.textContent = qd.ready || 'Komponenten (SKSE, Client, …) sind vorhanden.';
+    strip.classList.remove('state-warn');
+    strip.classList.add('state-ok');
+    iconEl.textContent = '✓';
+  } else {
+    msgEl.textContent = qd.missing || 'Es fehlen noch Teile — „Aktualisieren“ installiert sie.';
+    strip.classList.remove('state-warn');
+    strip.classList.add('state-warn');
+    iconEl.textContent = '◆';
+  }
+}
+
 async function fillSettings() {
   const c = await fh.loadConfig();
   $('set-ip').value = c.server_ip || '188.245.77.170';
@@ -159,8 +226,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   loadNews();
+  runQuickHealthCheck();
   refreshLauncherState();
   refreshServerStatus();
+
+  const qdismiss = $('quick-check-dismiss');
+  if (qdismiss) {
+    qdismiss.addEventListener('click', () => {
+      sessionStorage.setItem('fh-quickcheck-dismiss', '1');
+      $('quick-check-strip').hidden = true;
+    });
+  }
   statusTimer = setInterval(refreshServerStatus, 60000);
   setInterval(refreshLauncherState, 120000);
 
@@ -210,6 +286,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     } finally {
       lab.textContent = 'Aktualisieren';
       await refreshLauncherState();
+      sessionStorage.removeItem('fh-quickcheck-dismiss');
+      await runQuickHealthCheck();
     }
   });
 
