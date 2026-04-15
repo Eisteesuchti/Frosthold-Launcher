@@ -1,3 +1,6 @@
+# === Repo: Frosthold-Launcher (nur Installer/Launcher) ===
+# Server-/MP-Code: separates Git „Frosthold-Server“, lokal oft als ./Frosthold/
+
 # Lokale Launcher-Config (Server-IP, Download-URL, etc.)
 frostmp-launcher.json
 
