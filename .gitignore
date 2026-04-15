@@ -13,3 +13,7 @@ FrostholdRP-Launcher/python-runtime/
 
 # Eigenes Skyrim-/Build-Repo (separates Git in ./Frosthold/)
 Frosthold/
+
+# Chat-Server: lokale Secrets
+chat-server/config.json
+chat-server/node_modules/
