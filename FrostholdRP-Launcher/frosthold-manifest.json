@@ -1,13 +1,14 @@
 {
   "manifestVersion": 1,
-  "bundleRevision": "2026-04-15",
+  "bundleRevision": "2026-04-18",
   "updatePolicy": "conservative",
   "policyDe": {
     "title": "Updates & Kompatibilität",
-    "body": "Aktualisiere Client-Dateien nur, wenn etwas fehlt, der Server ein Update verlangt, oder du dich nicht verbinden kannst. Unangekündigte Updates können zu Inkompatibilität mit dem Live-Server führen (Login, Crashes). Der Button „Aktualisieren“ installiert fehlende Teile (SKSE, Client) — kein blindes Versions-Upgrade ohne Ankündigung."
+    "body": "Beim Start prüft der Launcher, ob SKSE/Client fehlen oder eine neue Client-ZIP auf dem Server liegt — „Aktualisieren“ erscheint nur in diesem Fall. „Client neu laden“ holt die Dateien bei Problemen erneut von der Quelle. Unangekündigte Server-Updates können kurzzeitig Inkompatibilität bedeuten."
   },
   "quickCheckDe": {
     "missing": "Es fehlen noch Komponenten. Nutze „Aktualisieren“, um SKSE und den Client zu installieren.",
+    "pendingUpdate": "Ein Update oder eine Installation steht aus — bitte unten zuerst auf „Aktualisieren“.",
     "ready": "Schnellprüfung: installierte Komponenten sehen gültig aus.",
     "noSkyrim": "Skyrim Special Edition wurde nicht gefunden. Installiere das Spiel über Steam oder trage den Pfad in den Einstellungen ein."
   }

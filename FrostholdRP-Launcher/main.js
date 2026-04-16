@@ -1,7 +1,55 @@
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, net } = require('electron');
 const path = require('path');
 const { spawn, execFile } = require('child_process');
 const fs = require('fs');
+const { autoUpdater } = require('electron-updater');
+
+const DEFAULT_STATUS_URL = 'http://188.245.77.170:3000/';
+
+function normalizeStatusUrl(u) {
+  const s = String(u || '').trim() || DEFAULT_STATUS_URL;
+  return s.replace(/\/$/, '') + '/';
+}
+
+/** HTTP(S)-Ping im Main-Prozess — umgeht CORS (Renderer-fetch von file:// schlaegt sonst fehl). */
+function pingServerStatusFromMain(statusUrl) {
+  return new Promise((resolve) => {
+    const url = normalizeStatusUrl(statusUrl);
+    let finished = false;
+    const done = (payload) => {
+      if (finished) return;
+      finished = true;
+      resolve(payload);
+    };
+    let req;
+    try {
+      req = net.request({ method: 'GET', url });
+    } catch (e) {
+      done({ ok: false, error: String(e.message || e) });
+      return;
+    }
+    const timer = setTimeout(() => {
+      try {
+        req.abort();
+      } catch (_) {}
+      done({ ok: false, error: 'timeout' });
+    }, 5000);
+    req.setHeader('User-Agent', 'FrostholdRP-Launcher/1.0');
+    req.on('response', (res) => {
+      const code = res.statusCode || 0;
+      res.on('data', () => {});
+      res.on('end', () => {
+        clearTimeout(timer);
+        done({ ok: code >= 200 && code < 300, statusCode: code });
+      });
+    });
+    req.on('error', (err) => {
+      clearTimeout(timer);
+      done({ ok: false, error: String(err.message || err) });
+    });
+    req.end();
+  });
+}
 
 function getConfigPath() {
   const py = getPythonScriptPath();
@@ -50,7 +98,7 @@ function applyBundledDefaultsToDisk() {
     profile_id: 1,
     skyrim_dir: '',
     client_dist_source: '',
-    status_url: 'http://188.245.77.170:3000/',
+    status_url: DEFAULT_STATUS_URL,
   };
   let existing = {};
   try {
@@ -229,6 +277,74 @@ function createDesktopShortcutWindows() {
   });
 }
 
+function isPortableExecutable() {
+  return !!(process.env.PORTABLE_EXECUTABLE_FILE || process.env.PORTABLE_EXECUTABLE_DIR);
+}
+
+/** Optional: in frostmp-launcher.json "launcher_update_feed_url": "https://…/ordner-mit-latest-yml/" (generic provider) */
+function configureAutoUpdaterFeedFromConfig() {
+  const cfg = loadLocalConfig();
+  const u = typeof cfg.launcher_update_feed_url === 'string' ? cfg.launcher_update_feed_url.trim().replace(/\/$/, '') : '';
+  if (!u) return;
+  try {
+    autoUpdater.setFeedURL({ provider: 'generic', url: u });
+  } catch (e) {
+    console.error('[updater] setFeedURL', e);
+  }
+}
+
+let launcherUpdaterStarted = false;
+
+function setupLauncherAutoUpdater() {
+  if (!app.isPackaged || launcherUpdaterStarted) return;
+  if (isPortableExecutable()) return;
+  if (process.platform !== 'win32') return;
+
+  launcherUpdaterStarted = true;
+  configureAutoUpdaterFeedFromConfig();
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('error', (err) => {
+    const msg = String((err && err.message) || err);
+    if (/404|Not Found|No published versions|net::ERR_/i.test(msg)) return;
+    console.error('[updater]', err);
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    const parent = BrowserWindow.getFocusedWindow() || mainWindow;
+    dialog
+      .showMessageBox(parent || undefined, {
+        type: 'info',
+        title: 'Launcher-Update',
+        message: `Version ${info.version} wurde heruntergeladen.`,
+        detail:
+          'Die Installation erfolgt beim nächsten Schließen des Launchers automatisch — oder du startest jetzt neu.',
+        buttons: ['Jetzt neu starten', 'Später'],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+      })
+      .then((r) => {
+        if (r.response === 0) {
+          try {
+            autoUpdater.quitAndInstall(false, true);
+          } catch (e) {
+            console.error('[updater] quitAndInstall', e);
+          }
+        }
+      })
+      .catch(() => {});
+  });
+
+  const check = () => {
+    autoUpdater.checkForUpdates().catch(() => {});
+  };
+  setTimeout(check, 12000);
+  setInterval(check, 6 * 60 * 60 * 1000);
+}
+
 async function maybePromptDesktopFromInstaller() {
   if (process.platform !== 'win32' || !app.isPackaged) return;
   const flag = getDesktopPromptFlagPath();
@@ -260,6 +376,7 @@ async function maybePromptDesktopFromInstaller() {
 app.whenReady().then(() => {
   applyBundledDefaultsToDisk();
   createWindow();
+  setupLauncherAutoUpdater();
   const schedulePrompt = () => setTimeout(() => maybePromptDesktopFromInstaller(), 450);
   if (mainWindow) {
     mainWindow.once('ready-to-show', schedulePrompt);
@@ -286,9 +403,15 @@ ipcMain.handle('load-config', async () => {
     profile_id: 1,
     skyrim_dir: '',
     client_dist_source: '',
-    status_url: 'http://188.245.77.170:3000/',
+    status_url: DEFAULT_STATUS_URL,
+    launcher_update_feed_url: '',
   };
   return { ...defaults, ...local };
+});
+
+ipcMain.handle('server-status-ping', async () => {
+  const local = loadLocalConfig();
+  return pingServerStatusFromMain(local.status_url || DEFAULT_STATUS_URL);
 });
 
 ipcMain.handle('save-config', async (_e, cfg) => {
@@ -299,7 +422,8 @@ ipcMain.handle('save-config', async (_e, cfg) => {
     profile_id: 1,
     skyrim_dir: '',
     client_dist_source: '',
-    status_url: 'http://188.245.77.170:3000/',
+    status_url: DEFAULT_STATUS_URL,
+    launcher_update_feed_url: '',
   };
   const merged = { ...defaults, ...prev };
   if (cfg && typeof cfg === 'object') {
@@ -309,6 +433,7 @@ ipcMain.handle('save-config', async (_e, cfg) => {
     if (typeof cfg.profile_id === 'number' && Number.isFinite(cfg.profile_id)) merged.profile_id = cfg.profile_id;
     if (typeof cfg.client_dist_source === 'string') merged.client_dist_source = cfg.client_dist_source.trim();
     if (typeof cfg.status_url === 'string') merged.status_url = cfg.status_url.trim();
+    if (typeof cfg.launcher_update_feed_url === 'string') merged.launcher_update_feed_url = cfg.launcher_update_feed_url.trim();
   }
   merged.server_port = 7777;
   if (!merged.server_ip) merged.server_ip = defaults.server_ip;
@@ -362,6 +487,30 @@ ipcMain.handle('setup', async () => {
     return { ok: false, error: 'bad_response', raw: r.raw, stderr: r.stderr };
   } catch (e) {
     return { ok: false, error: 'spawn', message: String(e.message || e) };
+  }
+});
+
+/** Setzt client_force_update_once in frostmp-launcher.json — nächster Setup lädt die Client-Dist erneut. */
+ipcMain.handle('check-launcher-updates', async () => {
+  if (!app.isPackaged || isPortableExecutable() || process.platform !== 'win32') {
+    return { ok: false, reason: 'not_applicable' };
+  }
+  try {
+    configureAutoUpdaterFeedFromConfig();
+    const r = await autoUpdater.checkForUpdates();
+    return { ok: true, updateInfo: r && r.updateInfo ? r.updateInfo : null };
+  } catch (e) {
+    return { ok: false, message: String(e.message || e) };
+  }
+});
+
+ipcMain.handle('force-client-refresh', async () => {
+  try {
+    const prev = loadLocalConfig();
+    saveLocalConfig({ ...prev, client_force_update_once: true });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: String(e.message || e) };
   }
 });
 

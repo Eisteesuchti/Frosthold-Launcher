@@ -1,0 +1,21 @@
+---
+description: FrostholdRP-Launcher Versionierung, dist-build bereinigen, Builds ausführen
+alwaysApply: true
+---
+
+# FrostholdRP-Launcher Releases
+
+Bei **Änderungen** am Electron-Launcher, Installer, `main.js`, Renderer, `package.json` Build, NSIS oder gebündelten Ressourcen:
+
+1. **Version erhöhen**
+   - Standard: **Patch +0.0.1** (z. B. 0.1.2 → 0.1.3) in `FrostholdRP-Launcher/package.json` und die **gleiche** Version an den beiden Stellen in `package-lock.json` (Root + `packages[""]`).
+   - Wenn der Nutzer eine **Minor-Version** vorgibt (z. B. **0.2.0**), diese stattdessen setzen.
+   - Sichtbare Anzeige: `FrostholdRP-Launcher/renderer/index.html` (Footer „LAUNCHER: x.y.z“).
+   - Optional: `frosthold-manifest.json` → `bundleRevision` auf das aktuelle Datum (YYYY-MM-DD).
+
+2. **Alte Builds vermeiden**
+   - `npm run dist:installer` / `dist:portable` / `dist` / `dist:publish` führen **`npm run clean:dist`** aus und löschen **`dist-build/`** komplett vor dem Build.
+   - Keine alten `Frosthold-Installer-*.exe`, `*.blockmap` oder `win-unpacked` aus vorherigen Versionen liegen lassen.
+
+3. **Build**
+   - Nach Versions-Bump den passenden **`npm run dist:*`**-Befehl im Ordner `FrostholdRP-Launcher` **selbst ausführen**, nicht nur anweisen.

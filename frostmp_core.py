@@ -183,6 +183,32 @@ def download_file(url: str, dest: Path, progress_cb=None) -> None:
                     progress_cb(done, total)
 
 
+def _is_http_url(s: str) -> bool:
+    return s.startswith("http://") or s.startswith("https://")
+
+
+def http_head_fingerprint(url: str) -> Optional[str]:
+    """
+    Liefert einen Vergleichs-String aus ETag und/oder Last-Modified (HEAD-Request),
+    oder None wenn der Server keine brauchbaren Header liefert / die Anfrage fehlschlaegt.
+    So kann der Launcher erkennen, ob die Client-ZIP auf dem Server neu ist, ohne sie komplett zu laden.
+    """
+    try:
+        req = urllib.request.Request(
+            url,
+            method="HEAD",
+            headers={"User-Agent": "FrostMP-Launcher/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            etag = (resp.headers.get("ETag") or "").strip()
+            lm = (resp.headers.get("Last-Modified") or "").strip()
+        if not etag and not lm:
+            return None
+        return f"{etag}|{lm}"
+    except Exception:
+        return None
+
+
 # ============================================================================
 # 7z extraction (multi-strategy)
 # ============================================================================
@@ -520,6 +546,42 @@ def _install_missing_components(
     """
     components = check_all_components(skyrim_dir)
     missing = [c for c in components if not c.installed]
+    client_src = (client_src or "").strip()
+
+    # Alles installiert: optional Client-Dist per HTTP neu ziehen, wenn Remote-Datei sich geaendert hat
+    if not missing and client_src and _is_http_url(client_src):
+        force_once = bool(cfg.get("client_force_update_once"))
+        remote_fp = http_head_fingerprint(client_src)
+        stored_fp = (cfg.get("client_dist_remote_fp") or "").strip()
+
+        if force_once:
+            try:
+                _install_client_files_sync(skyrim_dir, client_src)
+                new_fp = http_head_fingerprint(client_src) or remote_fp
+                patch: Dict[str, Any] = {"client_force_update_once": False}
+                if new_fp:
+                    patch["client_dist_remote_fp"] = new_fp
+                save_config(patch)
+            except Exception as e:
+                return False, "install_failed", str(e)
+            return True, None, None
+
+        if remote_fp and stored_fp and remote_fp != stored_fp:
+            try:
+                _install_client_files_sync(skyrim_dir, client_src)
+                new_fp = http_head_fingerprint(client_src) or remote_fp
+                if new_fp:
+                    save_config({"client_dist_remote_fp": new_fp})
+            except Exception as e:
+                return False, "install_failed", str(e)
+            return True, None, None
+
+        # Erstes Mal mit dieser Logik: Fingerprint speichern ohne erneuten Download
+        if remote_fp and not stored_fp:
+            save_config({"client_dist_remote_fp": remote_fp})
+
+        return True, None, None
+
     if not missing:
         return True, None, None
 
@@ -540,6 +602,10 @@ def _install_missing_components(
             install_skse(skyrim_dir, progress_cb=None, status_cb=None)
         if needs_client:
             _install_client_files_sync(skyrim_dir, client_src)
+            if _is_http_url(client_src):
+                new_fp = http_head_fingerprint(client_src)
+                if new_fp:
+                    save_config({"client_dist_remote_fp": new_fp})
     except Exception as e:
         return False, "install_failed", str(e)
 
@@ -548,6 +614,41 @@ def _install_missing_components(
     if still:
         return False, "install_incomplete", ", ".join(still)
     return True, None, None
+
+
+def compute_launcher_pending(cfg: dict, skyrim_dir: Optional[Path]) -> Dict[str, Any]:
+    """
+    True, wenn Installation oder Client-Update nötig ist (nur Prüfung, kein Download).
+    Gleiche Logik wie _install_missing_components, aber ohne Seiteneffekte.
+    """
+    out: Dict[str, Any] = {"pending_setup": False, "pending_reasons": []}
+    if skyrim_dir is None:
+        return out
+    try:
+        if not skyrim_dir.is_dir() or not (skyrim_dir / "SkyrimSE.exe").exists():
+            return out
+    except Exception:
+        return out
+
+    components = check_all_components(skyrim_dir)
+    missing = [c for c in components if not c.installed]
+    if missing:
+        out["pending_setup"] = True
+        out["pending_reasons"].append("missing_components")
+        return out
+
+    client_src = get_effective_client_dist(cfg).strip()
+    if client_src and _is_http_url(client_src):
+        if bool(cfg.get("client_force_update_once")):
+            out["pending_setup"] = True
+            out["pending_reasons"].append("client_force_refresh")
+            return out
+        remote_fp = http_head_fingerprint(client_src)
+        stored_fp = (cfg.get("client_dist_remote_fp") or "").strip()
+        if remote_fp and stored_fp and remote_fp != stored_fp:
+            out["pending_setup"] = True
+            out["pending_reasons"].append("client_dist_remote_changed")
+    return out
 
 
 def ensure_components_install_headless() -> dict:
@@ -699,6 +800,11 @@ def cli_json_status() -> None:
         out["ready_to_play"] = all(c.installed for c in comps)
     else:
         out["ready_to_play"] = False
+
+    pend = compute_launcher_pending(cfg, skyrim_dir)
+    out["pending_setup"] = pend["pending_setup"]
+    out["pending_reasons"] = pend["pending_reasons"]
+
     print(json.dumps(out, ensure_ascii=False))
 
 

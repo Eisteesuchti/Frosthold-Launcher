@@ -52,18 +52,14 @@ async function refreshServerStatus() {
   const players = $('player-count');
   const c = await fh.loadConfig();
   cfgCache = c;
-  const url = (c.status_url || 'http://188.245.77.170:3000/').replace(/\/$/, '') + '/';
 
   pill.classList.remove('online', 'offline');
   text.textContent = 'PRÜFE…';
   players.textContent = '';
 
   try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 5000);
-    const res = await fetch(url, { method: 'GET', signal: ctrl.signal, cache: 'no-store' });
-    clearTimeout(t);
-    if (res.ok) {
+    const r = await fh.serverStatusPing();
+    if (r && r.ok) {
       pill.classList.add('online');
       text.textContent = 'ONLINE';
       players.textContent = '';
@@ -138,6 +134,15 @@ async function runQuickHealthCheck() {
     return;
   }
 
+  if (s.pending_setup) {
+    msgEl.textContent = qd.pendingUpdate
+      || 'Installation oder Client-Update ausstehend — bitte unten auf „Aktualisieren“.';
+    strip.classList.remove('state-warn', 'state-ok');
+    strip.classList.add('state-warn');
+    iconEl.textContent = '◆';
+    return;
+  }
+
   if (s.ready_to_play) {
     msgEl.textContent = qd.ready || 'Komponenten (SKSE, Client, …) sind vorhanden.';
     strip.classList.remove('state-warn');
@@ -169,42 +174,72 @@ function closeSettings() {
 async function refreshLauncherState() {
   const play = $('btn-play');
   const upd = $('btn-update');
+  const reload = $('btn-reload');
+  const hint = $('launcher-footer-hint');
+
   let s;
   try {
     s = await fh.skyrimStatus();
   } catch (e) {
+    hint.hidden = false;
+    hint.textContent = 'Status konnte nicht geladen werden.';
     play.hidden = true;
-    upd.hidden = false;
-    upd.disabled = true;
-    upd.title = 'Status konnte nicht geladen werden.';
+    reload.hidden = true;
+    upd.hidden = true;
     return;
   }
 
   if (s && s.error === 'bad_json') {
+    hint.hidden = false;
+    hint.textContent = 'FrostMP-Launcher.py antwortet nicht wie erwartet.';
     play.hidden = true;
-    upd.hidden = false;
-    upd.disabled = true;
-    upd.title = 'FrostMP-Launcher.py antwortet nicht wie erwartet.';
+    reload.hidden = true;
+    upd.hidden = true;
     return;
   }
 
   const ready = s.ready_to_play === true;
   const skyrimOk = s.skyrim_effective != null;
+  const pending = s.pending_setup === true;
+
+  if (!skyrimOk) {
+    play.hidden = true;
+    reload.hidden = true;
+    upd.hidden = true;
+    hint.hidden = false;
+    hint.textContent = 'Skyrim SE nicht gefunden — bitte Installation prüfen oder Pfad in den Einstellungen.';
+    return;
+  }
+
+  if (pending) {
+    play.hidden = true;
+    reload.hidden = true;
+    upd.hidden = false;
+    upd.disabled = false;
+    upd.title = 'Installiert fehlende Teile oder spielt ein Client-Update ein.';
+    hint.textContent = '';
+    hint.hidden = true;
+    return;
+  }
 
   if (ready) {
+    upd.hidden = true;
     play.hidden = false;
     play.disabled = false;
-    upd.hidden = true;
-    upd.disabled = false;
-    upd.title = 'SKSE und Client-Dateien prüfen und installieren';
-  } else {
-    play.hidden = true;
-    upd.hidden = false;
-    upd.disabled = !skyrimOk;
-    upd.title = skyrimOk
-      ? 'Lädt fehlende Dateien (SKSE, Client …) und richtet alles ein.'
-      : 'Skyrim Special Edition wurde nicht gefunden — bitte über Steam installieren oder Pfad in den Einstellungen.';
+    reload.hidden = false;
+    reload.disabled = false;
+    hint.hidden = true;
+    hint.textContent = 'Prüfe Installation…';
+    return;
   }
+
+  play.hidden = true;
+  reload.hidden = true;
+  upd.hidden = false;
+  upd.disabled = false;
+  upd.title = 'Lädt fehlende Dateien (SKSE, Client …) und richtet alles ein.';
+  hint.hidden = true;
+  hint.textContent = 'Prüfe Installation…';
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -238,7 +273,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
   statusTimer = setInterval(refreshServerStatus, 60000);
-  setInterval(refreshLauncherState, 120000);
+  setInterval(async () => {
+    await refreshLauncherState();
+    sessionStorage.removeItem('fh-quickcheck-dismiss');
+    await runQuickHealthCheck();
+  }, 120000);
 
   $('btn-min').addEventListener('click', () => fh.minimize());
   $('btn-close').addEventListener('click', () => fh.close());
@@ -285,6 +324,34 @@ document.addEventListener('DOMContentLoaded', async () => {
       showToast(`Fehler: ${e}`, 12000);
     } finally {
       lab.textContent = 'Aktualisieren';
+      await refreshLauncherState();
+      sessionStorage.removeItem('fh-quickcheck-dismiss');
+      await runQuickHealthCheck();
+    }
+  });
+
+  $('btn-reload').addEventListener('click', async () => {
+    const btn = $('btn-reload');
+    if (btn.disabled) return;
+    btn.disabled = true;
+    showToast('Client wird neu von der Quelle geladen — bitte warten…', 12000);
+    try {
+      const fr = await fh.forceClientRefresh();
+      if (!fr || !fr.ok) {
+        showToast('Konnte Aktualisierungs-Flag nicht setzen.', 8000);
+        return;
+      }
+      const r = await fh.setup();
+      if (r && r.ok) {
+        showToast(r.message || 'Client neu geladen.', 7000);
+      } else {
+        const msg = (r && r.message) || (r && r.error) || JSON.stringify(r);
+        showToast(`Fehler: ${msg}`, 16000);
+      }
+    } catch (e) {
+      showToast(`Fehler: ${e}`, 12000);
+    } finally {
+      btn.disabled = false;
       await refreshLauncherState();
       sessionStorage.removeItem('fh-quickcheck-dismiss');
       await runQuickHealthCheck();

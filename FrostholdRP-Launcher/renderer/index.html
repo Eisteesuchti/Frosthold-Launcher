@@ -79,14 +79,19 @@
 
   <footer class="footer">
     <div class="footer-left">
-      <span>SPIELVERSION: <strong>0.1 Alpha</strong></span>
+      <span>LAUNCHER: <strong>0.1.3</strong></span>
       <span class="sep">|</span>
       <span>SERVER: <strong>ROLEPLAY</strong></span>
     </div>
     <div class="footer-actions">
-      <button type="button" class="update-btn" id="btn-update" title="SKSE und Client-Dateien prüfen und installieren">
+      <span class="launcher-footer-hint" id="launcher-footer-hint">Prüfe Installation…</span>
+      <button type="button" class="update-btn" id="btn-update" hidden title="Fehlende Dateien installieren oder Client-Update einspielen">
         <span class="update-icon" aria-hidden="true">&#8635;</span>
         <span id="btn-update-label">Aktualisieren</span>
+      </button>
+      <button type="button" class="reload-btn" id="btn-reload" hidden title="Client-Dateien erneut von der Server-Quelle laden (bei Problemen)">
+        <span class="reload-icon" aria-hidden="true">&#10227;</span>
+        <span>Client neu laden</span>
       </button>
       <button type="button" class="play-btn" id="btn-play" hidden>
         <span>SPIELEN</span>
