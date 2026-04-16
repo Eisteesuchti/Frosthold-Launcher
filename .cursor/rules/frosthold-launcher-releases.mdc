@@ -19,3 +19,9 @@ Bei **Änderungen** am Electron-Launcher, Installer, `main.js`, Renderer, `packa
 
 3. **Build**
    - Nach Versions-Bump den passenden **`npm run dist:*`**-Befehl im Ordner `FrostholdRP-Launcher` **selbst ausführen**, nicht nur anweisen.
+
+4. **Öffentliches Launcher-Update (GitHub Release + Git-Push)**
+   - Wenn eine **neue Launcher-Version** für Spieler ausgerollt werden soll: im Ordner `FrostholdRP-Launcher` **`npm run release`** ausführen (nicht nur `dist:installer`).
+   - **Voraussetzung:** Umgebungsvariable **`GH_TOKEN`** oder **`GITHUB_TOKEN`** (GitHub PAT mit `repo`) ist gesetzt — sonst schlägt der Upload zu GitHub Releases fehl.
+   - Das Script baut mit **`dist:publish`**, lädt **Installer + latest.yml + blockmap** ins Repo **`Eisteesuchti/Frosthold-Launcher`** hoch, committet danach die Launcher-/Python-Änderungen und führt **`git push`** auf den aktuellen Branch aus.
+   - Ohne Token: nur **`npm run dist:installer`** lokal; Release manuell auf GitHub anlegen oder Token setzen und **`npm run release`** wiederholen.

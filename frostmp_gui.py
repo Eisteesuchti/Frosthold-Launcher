@@ -431,8 +431,8 @@ class FrostMPLauncher(tk.Tk):
                 "installiert erkannt wurde. Bitte pruefe die Installation.")
             return
 
-        # Write connection settings
-        write_client_settings(skyrim_dir, server_ip, DEFAULT_PORT, profile_id)
+        # Write connection settings (inkl. optional Frosthold-Chat aus frostmp-launcher.json)
+        write_client_settings(skyrim_dir, server_ip, DEFAULT_PORT, profile_id, load_config())
 
         # Save launcher config
         save_config({

@@ -1,6 +1,6 @@
 {
   "name": "frostholdrp-launcher",
-  "version": "0.1.3",
+  "version": "0.1.5",
   "description": "FrostholdRP Skyrim Multiplayer Launcher",
   "author": "FrostholdRP",
   "main": "main.js",
@@ -13,7 +13,8 @@
     "dist": "npm run clean:dist && npm run prepare-runtime && electron-builder --win nsis portable --x64",
     "dist:installer": "npm run clean:dist && npm run prepare-runtime && electron-builder --win nsis --x64",
     "dist:portable": "npm run clean:dist && npm run prepare-runtime && electron-builder --win portable --x64",
-    "dist:publish": "npm run clean:dist && npm run prepare-runtime && electron-builder --win nsis --x64 --publish always"
+    "dist:publish": "npm run clean:dist && npm run prepare-runtime && electron-builder --win nsis --x64 --publish always",
+    "release": "node scripts/release-launcher.mjs"
   },
   "devDependencies": {
     "electron": "^33.2.0",

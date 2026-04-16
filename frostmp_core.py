@@ -488,8 +488,33 @@ def get_settings_path(skyrim_dir: Path) -> Path:
     return skyrim_dir / "Data" / "Platform" / "Plugins" / "skymp5-client-settings.txt"
 
 
-def write_client_settings(skyrim_dir: Path, server_ip: str, port: int, profile_id: int) -> Path:
-    settings = {
+def _frosthold_chat_keys_for_client_settings(cfg: dict) -> Dict[str, Any]:
+    """
+    FrostholdChatService (skymp5-client) liest unter sp.settings['skymp5-client']:
+    frosthold-chat-enabled (bool), frosthold-chat-ws-url, frosthold-chat-user-id, frosthold-chat-secret.
+    Quelle: frostmp-launcher.json mit Schluesseln frosthold_chat_* (snake_case).
+    """
+    out: Dict[str, Any] = {}
+    raw_en = cfg.get("frosthold_chat_enabled")
+    enabled = raw_en is True or str(raw_en).lower() in ("1", "true", "yes")
+    out["frosthold-chat-enabled"] = enabled
+    u = (cfg.get("frosthold_chat_ws_url") or "").strip()
+    if u:
+        out["frosthold-chat-ws-url"] = u
+    uid = (cfg.get("frosthold_chat_user_id") or "").strip()
+    if uid:
+        out["frosthold-chat-user-id"] = uid
+    sec = (cfg.get("frosthold_chat_secret") or "").strip()
+    if sec:
+        out["frosthold-chat-secret"] = sec
+    return out
+
+
+def write_client_settings(
+    skyrim_dir: Path, server_ip: str, port: int, profile_id: int, cfg: Optional[dict] = None
+) -> Path:
+    cfg = cfg if isinstance(cfg, dict) else {}
+    settings: Dict[str, Any] = {
         "server-ip": server_ip,
         "server-host": server_ip,
         "server-port": port,
@@ -498,6 +523,7 @@ def write_client_settings(skyrim_dir: Path, server_ip: str, port: int, profile_i
         "server-master-key": None,
         "gameData": {"profileId": profile_id},
     }
+    settings.update(_frosthold_chat_keys_for_client_settings(cfg))
     path = get_settings_path(skyrim_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
@@ -701,7 +727,7 @@ def ensure_components_install_headless() -> dict:
             "ready_to_play": False,
         }
 
-    write_client_settings(skyrim_dir, server_ip, port, profile_id)
+    write_client_settings(skyrim_dir, server_ip, port, profile_id, cfg)
     save_config({
         "server_ip": server_ip,
         "server_port": port,
@@ -754,7 +780,7 @@ def ensure_components_and_launch_headless() -> dict:
     if not skse:
         return {"ok": False, "error": "skse_missing", "message": "skse64_loader.exe fehlt."}
 
-    write_client_settings(skyrim_dir, server_ip, port, profile_id)
+    write_client_settings(skyrim_dir, server_ip, port, profile_id, cfg)
     save_config({
         "server_ip": server_ip,
         "server_port": port,

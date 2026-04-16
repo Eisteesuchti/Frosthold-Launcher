@@ -1,7 +1,11 @@
 {
-  "_info": "Vor dem Verteilen: client_dist_source auf die oeffentliche HTTPS-URL eurer Client-ZIP setzen (einmalig). Launcher-Updates: GitHub Releases (Frosthold-Launcher) oder optional launcher_update_feed_url (HTTPS-Ordner mit latest.yml).",
+  "_info": "client_dist_source: oeffentliche Client-ZIP-URL. Chat: frosthold_chat_enabled true + frosthold_chat_ws_url (ws://HOST:3210) + user_id/secret wie chat-server config.json — sonst kein Ingame-Chat.",
   "server_ip": "188.245.77.170",
   "status_url": "http://188.245.77.170:3000/",
   "client_dist_source": "",
-  "launcher_update_feed_url": ""
+  "launcher_update_feed_url": "",
+  "frosthold_chat_enabled": false,
+  "frosthold_chat_ws_url": "",
+  "frosthold_chat_user_id": "",
+  "frosthold_chat_secret": ""
 }

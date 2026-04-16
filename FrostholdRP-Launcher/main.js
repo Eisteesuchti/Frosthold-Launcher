@@ -99,6 +99,10 @@ function applyBundledDefaultsToDisk() {
     skyrim_dir: '',
     client_dist_source: '',
     status_url: DEFAULT_STATUS_URL,
+    frosthold_chat_enabled: false,
+    frosthold_chat_ws_url: '',
+    frosthold_chat_user_id: '',
+    frosthold_chat_secret: '',
   };
   let existing = {};
   try {
@@ -405,6 +409,10 @@ ipcMain.handle('load-config', async () => {
     client_dist_source: '',
     status_url: DEFAULT_STATUS_URL,
     launcher_update_feed_url: '',
+    frosthold_chat_enabled: false,
+    frosthold_chat_ws_url: '',
+    frosthold_chat_user_id: '',
+    frosthold_chat_secret: '',
   };
   return { ...defaults, ...local };
 });
@@ -424,6 +432,10 @@ ipcMain.handle('save-config', async (_e, cfg) => {
     client_dist_source: '',
     status_url: DEFAULT_STATUS_URL,
     launcher_update_feed_url: '',
+    frosthold_chat_enabled: false,
+    frosthold_chat_ws_url: '',
+    frosthold_chat_user_id: '',
+    frosthold_chat_secret: '',
   };
   const merged = { ...defaults, ...prev };
   if (cfg && typeof cfg === 'object') {
@@ -434,6 +446,10 @@ ipcMain.handle('save-config', async (_e, cfg) => {
     if (typeof cfg.client_dist_source === 'string') merged.client_dist_source = cfg.client_dist_source.trim();
     if (typeof cfg.status_url === 'string') merged.status_url = cfg.status_url.trim();
     if (typeof cfg.launcher_update_feed_url === 'string') merged.launcher_update_feed_url = cfg.launcher_update_feed_url.trim();
+    if (typeof cfg.frosthold_chat_enabled === 'boolean') merged.frosthold_chat_enabled = cfg.frosthold_chat_enabled;
+    if (typeof cfg.frosthold_chat_ws_url === 'string') merged.frosthold_chat_ws_url = cfg.frosthold_chat_ws_url.trim();
+    if (typeof cfg.frosthold_chat_user_id === 'string') merged.frosthold_chat_user_id = cfg.frosthold_chat_user_id.trim();
+    if (typeof cfg.frosthold_chat_secret === 'string') merged.frosthold_chat_secret = cfg.frosthold_chat_secret.trim();
   }
   merged.server_port = 7777;
   if (!merged.server_ip) merged.server_ip = defaults.server_ip;
