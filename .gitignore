@@ -14,8 +14,8 @@ FrostholdRP-Launcher/node_modules/
 FrostholdRP-Launcher/dist-build/
 FrostholdRP-Launcher/python-runtime/
 
-# Chat-Server
-chat-server/node_modules/
+# Chat-Server — Quellcode: https://github.com/Eisteesuchti/Frosthold-Server (lokaler Ordner optional, nicht committen)
+chat-server/
 
 # Eigenes Skyrim-/Build-Repo (separates Git in ./Frosthold/)
 Frosthold/
