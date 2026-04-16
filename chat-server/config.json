@@ -1,9 +1,15 @@
 {
+  "_info": "Rollen wie in roles.mjs. discordMembers: Discord-User-ID → roleId (manuell). Geplant: Discord-Serverrollen → gleiche roleIds (Bot mit Guild-Member-Read oder vergleichbar), dann entfällt viel Handpflege. VIP: Präfix immer an. Ab Trial-GM: /gmbadge on|off schaltet Rollen-Präfix. tags{} = zusätzliches Präfix (z. B. wenn Rollen-Badge aus).",
   "port": 3211,
   "httpPort": 3212,
   "localRadius": 3000,
   "maxMessageLength": 120,
   "discordClientId": "1494190090480517180",
   "discordRedirectUri": "http://localhost:39015/callback",
+  "defaultRoleId": "player",
+  "roleDefinitions": {},
+  "discordMembers": {
+    "472757414299697161": "game_admin"
+  },
   "tags": {}
 }
