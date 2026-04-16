@@ -124,6 +124,21 @@ function applyBundledDefaultsToDisk() {
     if (!String(merged.server_ip || '').trim() && sip) {
       merged.server_ip = sip;
     }
+    if (bundled.frosthold_chat_enabled === true && merged.frosthold_chat_enabled !== true) {
+      merged.frosthold_chat_enabled = true;
+    }
+    const cwsu = String(bundled.frosthold_chat_ws_url || '').trim();
+    if (!String(merged.frosthold_chat_ws_url || '').trim() && cwsu) {
+      merged.frosthold_chat_ws_url = cwsu;
+    }
+    const cuid = String(bundled.frosthold_chat_user_id || '').trim();
+    if (!String(merged.frosthold_chat_user_id || '').trim() && cuid) {
+      merged.frosthold_chat_user_id = cuid;
+    }
+    const csec = String(bundled.frosthold_chat_secret || '').trim();
+    if (!String(merged.frosthold_chat_secret || '').trim() && csec) {
+      merged.frosthold_chat_secret = csec;
+    }
   }
   merged.server_port = 7777;
   if (!merged.server_ip) merged.server_ip = defaults.server_ip;
