@@ -10,7 +10,6 @@
   <div class="titlebar" id="drag-region">
     <div class="titlebar-left">
       <img src="../assets/logo.png" alt="" class="logo-img" id="logo-img" width="40" height="40" />
-      <span class="brand">FROSTHOLDRP</span>
     </div>
     <nav class="titlebar-nav">
       <span class="nav-link disabled" data-url="">WEBSITE</span>
@@ -29,21 +28,10 @@
     </div>
   </div>
 
-  <div class="quick-check-strip" id="quick-check-strip" hidden>
-    <div class="quick-check-inner">
-      <span class="quick-check-icon" id="quick-check-icon" aria-hidden="true">◆</span>
-      <div class="quick-check-text">
-        <strong id="quick-check-title">Schnellprüfung</strong>
-        <span id="quick-check-msg"></span>
-      </div>
-      <button type="button" class="quick-check-dismiss" id="quick-check-dismiss" title="Hinweis ausblenden">✕</button>
-    </div>
-    <p class="policy-hint" id="policy-hint"></p>
-  </div>
-
   <main class="hero">
     <div class="hero-bg" aria-hidden="true"></div>
     <div class="hero-aurora" aria-hidden="true"></div>
+    <div class="hero-constellations" aria-hidden="true"></div>
     <div class="hero-silhouette" aria-hidden="true"></div>
     <div class="hero-vignette" aria-hidden="true"></div>
     <div class="hero-stars" aria-hidden="true"></div>
@@ -60,12 +48,6 @@
           <span class="player-count" id="player-count"></span>
         </div>
       </div>
-      <div class="hero-crest-panel">
-        <div class="hero-crest-frame">
-          <img src="../assets/logo.png" alt="" class="hero-crest-img" id="hero-crest-img" width="280" height="280" />
-        </div>
-        <p class="hero-crest-caption">Frosthold</p>
-      </div>
     </div>
   </main>
 
@@ -79,19 +61,14 @@
 
   <footer class="footer">
     <div class="footer-left">
-      <span>LAUNCHER: <strong>0.1.7</strong></span>
+      <span>LAUNCHER: <strong>0.2.0</strong></span>
       <span class="sep">|</span>
       <span>SERVER: <strong>ROLEPLAY</strong></span>
     </div>
     <div class="footer-actions">
-      <span class="launcher-footer-hint" id="launcher-footer-hint">Prüfe Installation…</span>
       <button type="button" class="update-btn" id="btn-update" hidden title="Fehlende Dateien installieren oder Client-Update einspielen">
         <span class="update-icon" aria-hidden="true">&#8635;</span>
         <span id="btn-update-label">Aktualisieren</span>
-      </button>
-      <button type="button" class="reload-btn" id="btn-reload" hidden title="Client-Dateien erneut von der Server-Quelle laden (bei Problemen)">
-        <span class="reload-icon" aria-hidden="true">&#10227;</span>
-        <span>Client neu laden</span>
       </button>
       <button type="button" class="play-btn" id="btn-play" hidden>
         <span>SPIELEN</span>

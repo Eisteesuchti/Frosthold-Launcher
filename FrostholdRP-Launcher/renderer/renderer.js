@@ -42,12 +42,11 @@ function escapeHtml(s) {
   return d.innerHTML;
 }
 
-let statusTimer = null;
 let cfgCache = {};
+let toastTimer = null;
 
 async function refreshServerStatus() {
   const pill = $('server-pill');
-  const dot = $('status-dot');
   const text = $('status-text');
   const players = $('player-count');
   const c = await fh.loadConfig();
@@ -73,87 +72,19 @@ async function refreshServerStatus() {
   }
 }
 
-function showToast(msg, ms = 5000) {
+function showToast(msg, ms = 8000) {
   const el = $('toast');
+  el.classList.remove('fading-out');
   el.textContent = msg;
   el.hidden = false;
-  setTimeout(() => { el.hidden = true; }, ms);
-}
 
-async function runQuickHealthCheck() {
-  const strip = $('quick-check-strip');
-  const titleEl = $('quick-check-title');
-  const msgEl = $('quick-check-msg');
-  const policyEl = $('policy-hint');
-  const iconEl = $('quick-check-icon');
-  if (!strip || sessionStorage.getItem('fh-quickcheck-dismiss') === '1') return;
+  if (toastTimer) clearTimeout(toastTimer);
 
-  titleEl.textContent = 'Schnellprüfung';
-  msgEl.textContent = 'Prüfe Installation und Server-Client…';
-  strip.hidden = false;
-  strip.classList.remove('state-ok', 'state-warn', 'state-bad');
-  strip.classList.add('state-warn');
-  policyEl.textContent = '';
-
-  let h;
-  try {
-    h = await fh.quickHealthCheck();
-  } catch (e) {
-    msgEl.textContent = `Prüfung fehlgeschlagen: ${e}`;
-    strip.classList.add('state-bad');
-    return;
-  }
-
-  const md = h.manifest && h.manifest.ok ? h.manifest.data : null;
-  if (md && md.policyDe && md.policyDe.body) {
-    policyEl.textContent = md.policyDe.body;
-  }
-
-  const s = h.status;
-  const qd = md && md.quickCheckDe ? md.quickCheckDe : {};
-  if (!s || s.error === 'bad_json') {
-    msgEl.textContent = 'Python-Backend antwortet nicht. Die Runtime liegt im Launcher—bei fehlenden Dateien Neuinstallation versuchen.';
-    strip.classList.remove('state-warn');
-    strip.classList.add('state-bad');
-    iconEl.textContent = '✕';
-    return;
-  }
-  if (s.error) {
-    msgEl.textContent = String(s.error);
-    strip.classList.remove('state-warn');
-    strip.classList.add('state-bad');
-    iconEl.textContent = '✕';
-    return;
-  }
-
-  if (!s.skyrim_effective) {
-    msgEl.textContent = qd.noSkyrim || 'Skyrim SE nicht gefunden.';
-    strip.classList.remove('state-warn');
-    strip.classList.add('state-bad');
-    iconEl.textContent = '!';
-    return;
-  }
-
-  if (s.pending_setup) {
-    msgEl.textContent = qd.pendingUpdate
-      || 'Installation oder Client-Update ausstehend — bitte unten auf „Aktualisieren“.';
-    strip.classList.remove('state-warn', 'state-ok');
-    strip.classList.add('state-warn');
-    iconEl.textContent = '◆';
-    return;
-  }
-
-  if (s.ready_to_play) {
-    msgEl.textContent = qd.ready || 'Komponenten (SKSE, Client, …) sind vorhanden.';
-    strip.classList.remove('state-warn');
-    strip.classList.add('state-ok');
-    iconEl.textContent = '✓';
-  } else {
-    msgEl.textContent = qd.missing || 'Es fehlen noch Teile — „Aktualisieren“ installiert sie.';
-    strip.classList.remove('state-warn');
-    strip.classList.add('state-warn');
-    iconEl.textContent = '◆';
-  }
+  const fadeStart = Math.max(ms - 500, 500);
+  toastTimer = setTimeout(() => {
+    el.classList.add('fading-out');
+    setTimeout(() => { el.hidden = true; el.classList.remove('fading-out'); }, 500);
+  }, fadeStart);
 }
 
 async function fillSettings() {
@@ -171,75 +102,50 @@ function closeSettings() {
   $('settings-overlay').hidden = true;
 }
 
+let lastSkyrimWarning = 0;
+
 async function refreshLauncherState() {
   const play = $('btn-play');
   const upd = $('btn-update');
-  const reload = $('btn-reload');
-  const hint = $('launcher-footer-hint');
 
   let s;
   try {
     s = await fh.skyrimStatus();
-  } catch (e) {
-    hint.hidden = false;
-    hint.textContent = 'Status konnte nicht geladen werden.';
+  } catch {
     play.hidden = true;
-    reload.hidden = true;
     upd.hidden = true;
     return;
   }
 
-  if (s && s.error === 'bad_json') {
-    hint.hidden = false;
-    hint.textContent = 'FrostMP-Launcher.py antwortet nicht wie erwartet.';
+  console.log('[FH] skyrimStatus:', JSON.stringify(s));
+
+  if (!s || s.error) {
     play.hidden = true;
-    reload.hidden = true;
     upd.hidden = true;
     return;
   }
 
-  const ready = s.ready_to_play === true;
   const skyrimOk = s.skyrim_effective != null;
-  const pending = s.pending_setup === true;
-
   if (!skyrimOk) {
     play.hidden = true;
-    reload.hidden = true;
     upd.hidden = true;
-    hint.hidden = false;
-    hint.textContent = 'Skyrim SE nicht gefunden — bitte Installation prüfen oder Pfad in den Einstellungen.';
+    const now = Date.now();
+    if (now - lastSkyrimWarning > 30000) {
+      lastSkyrimWarning = now;
+      showToast('Skyrim SE nicht gefunden — bitte Pfad in den Einstellungen setzen.', 8000);
+    }
     return;
   }
 
-  if (pending) {
-    play.hidden = true;
-    reload.hidden = true;
+  if (s.pending_setup) {
     upd.hidden = false;
     upd.disabled = false;
-    upd.title = 'Installiert fehlende Teile oder spielt ein Client-Update ein.';
-    hint.textContent = '';
-    hint.hidden = true;
-    return;
-  }
-
-  if (ready) {
-    upd.hidden = true;
+    play.hidden = true;
+  } else {
     play.hidden = false;
     play.disabled = false;
-    reload.hidden = false;
-    reload.disabled = false;
-    hint.hidden = true;
-    hint.textContent = 'Prüfe Installation…';
-    return;
+    upd.hidden = true;
   }
-
-  play.hidden = true;
-  reload.hidden = true;
-  upd.hidden = false;
-  upd.disabled = false;
-  upd.title = 'Lädt fehlende Dateien (SKSE, Client …) und richtet alles ein.';
-  hint.hidden = true;
-  hint.textContent = 'Prüfe Installation…';
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -252,32 +158,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     logo.parentNode.insertBefore(fb, logo);
   };
 
-  const crest = $('hero-crest-img');
-  if (crest) {
-    crest.onerror = () => {
-      const panel = document.querySelector('.hero-crest-panel');
-      if (panel) panel.style.display = 'none';
-    };
-  }
-
   loadNews();
-  runQuickHealthCheck();
   refreshLauncherState();
   refreshServerStatus();
 
-  const qdismiss = $('quick-check-dismiss');
-  if (qdismiss) {
-    qdismiss.addEventListener('click', () => {
-      sessionStorage.setItem('fh-quickcheck-dismiss', '1');
-      $('quick-check-strip').hidden = true;
-    });
-  }
-  statusTimer = setInterval(refreshServerStatus, 60000);
-  setInterval(async () => {
-    await refreshLauncherState();
-    sessionStorage.removeItem('fh-quickcheck-dismiss');
-    await runQuickHealthCheck();
-  }, 120000);
+  // Silent auto-refresh every 10 seconds
+  setInterval(refreshLauncherState, 10000);
+  setInterval(refreshServerStatus, 5000);
 
   $('btn-min').addEventListener('click', () => fh.minimize());
   $('btn-close').addEventListener('click', () => fh.close());
@@ -288,7 +175,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       server_ip: $('set-ip').value.trim(),
       skyrim_dir: $('set-skyrim').value.trim(),
     });
-    showToast('Einstellungen gespeichert.');
+    showToast('Einstellungen gespeichert.', 4000);
     closeSettings();
     refreshServerStatus();
     refreshLauncherState();
@@ -311,50 +198,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (btn.disabled) return;
     lab.textContent = 'Installiere…';
     btn.disabled = true;
-    showToast('Prüfe Installation und lade fehlende Dateien — das kann einige Minuten dauern…', 10000);
+    showToast('Lade fehlende Dateien — das kann einige Minuten dauern…', 12000);
     try {
       const r = await fh.setup();
       if (r && r.ok) {
-        showToast(r.message || 'Installation abgeschlossen.', 7000);
+        showToast(r.message || 'Installation abgeschlossen.', 6000);
       } else {
         const msg = (r && r.message) || (r && r.error) || JSON.stringify(r);
-        showToast(`Fehler: ${msg}`, 16000);
+        showToast(`Fehler: ${msg}`, 8000);
       }
     } catch (e) {
-      showToast(`Fehler: ${e}`, 12000);
+      showToast(`Fehler: ${e}`, 8000);
     } finally {
       lab.textContent = 'Aktualisieren';
       await refreshLauncherState();
-      sessionStorage.removeItem('fh-quickcheck-dismiss');
-      await runQuickHealthCheck();
-    }
-  });
-
-  $('btn-reload').addEventListener('click', async () => {
-    const btn = $('btn-reload');
-    if (btn.disabled) return;
-    btn.disabled = true;
-    showToast('Client wird neu von der Quelle geladen — bitte warten…', 12000);
-    try {
-      const fr = await fh.forceClientRefresh();
-      if (!fr || !fr.ok) {
-        showToast('Konnte Aktualisierungs-Flag nicht setzen.', 8000);
-        return;
-      }
-      const r = await fh.setup();
-      if (r && r.ok) {
-        showToast(r.message || 'Client neu geladen.', 7000);
-      } else {
-        const msg = (r && r.message) || (r && r.error) || JSON.stringify(r);
-        showToast(`Fehler: ${msg}`, 16000);
-      }
-    } catch (e) {
-      showToast(`Fehler: ${e}`, 12000);
-    } finally {
-      btn.disabled = false;
-      await refreshLauncherState();
-      sessionStorage.removeItem('fh-quickcheck-dismiss');
-      await runQuickHealthCheck();
     }
   });
 
@@ -406,6 +263,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   $('btn-play').addEventListener('click', async () => {
     const btn = $('btn-play');
+
+    const session = await fh.discordSession();
+    if (!session || !session.displayName) {
+      showToast('Du musst dich zuerst mit Discord anmelden, bevor du spielen kannst.', 8000);
+      const loginBtn = $('btn-discord-login');
+      if (loginBtn) loginBtn.classList.add('highlight-pulse');
+      setTimeout(() => { if (loginBtn) loginBtn.classList.remove('highlight-pulse'); }, 3000);
+      return;
+    }
+
     btn.disabled = true;
     showToast('Starte FrostholdRP…', 2000);
     try {
@@ -414,11 +281,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         showToast('Skyrim wird mit SKSE gestartet. Du kannst den Launcher schließen.', 6000);
       } else {
         const msg = (r && r.message) || (r && r.error) || JSON.stringify(r);
-        showToast(`Fehler: ${msg}`, 12000);
+        showToast(`Fehler: ${msg}`, 8000);
         await refreshLauncherState();
       }
     } catch (e) {
-      showToast(`Fehler: ${e}`, 12000);
+      showToast(`Fehler: ${e}`, 8000);
     } finally {
       btn.disabled = false;
     }

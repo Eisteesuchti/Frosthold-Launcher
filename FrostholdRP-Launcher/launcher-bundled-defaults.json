@@ -1,7 +1,7 @@
 {
   "_info": "client_dist_source: oeffentliche Client-ZIP-URL. Chat: frosthold_chat_enabled true + frosthold_chat_ws_url (ws://HOST:3210) + user_id/secret wie chat-server config.json — sonst kein Ingame-Chat.",
   "server_ip": "188.245.77.170",
-  "status_url": "http://188.245.77.170:3000/",
+  "status_url": "http://188.245.77.170:3212/health",
   "client_dist_source": "",
   "launcher_update_feed_url": "",
   "frosthold_chat_enabled": true,

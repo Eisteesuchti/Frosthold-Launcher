@@ -5,10 +5,11 @@ const { spawn, execFile } = require('child_process');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
 
-const DEFAULT_STATUS_URL = 'http://188.245.77.170:3000/';
+const DEFAULT_STATUS_URL = 'http://188.245.77.170:3212/health';
 
 function normalizeStatusUrl(u) {
   const s = String(u || '').trim() || DEFAULT_STATUS_URL;
+  if (s.includes('/health')) return s;
   return s.replace(/\/$/, '') + '/';
 }
 
