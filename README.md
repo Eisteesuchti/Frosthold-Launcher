@@ -1,10 +1,11 @@
-# Frosthold Launcher
+# Frosthold Server & Launcher
 
 **GitHub:** [Frosthold-Launcher](https://github.com/Eisteesuchti/Frosthold-Launcher)
 
-Dieses Repository enthält **ausschließlich** den FrostholdRP-Installer/Launcher:
+Dieses Repository enthält unter anderem:
 
-- `FrostholdRP-Launcher/` (Electron, NSIS, gebündelte Python-Runtime)
-- `FrostMP-Launcher.py`, `frostmp_core.py`, `frostmp_gui.py` (Backend für den Launcher)
+- **`FrostholdRP-Launcher/`** — Electron-Launcher (NSIS/Portable, gebündelte Python-Runtime)
+- **`chat-server/`** — WebSocket-Chat mit Discord-OAuth (Node)
+- **`FrostMP-Launcher.py`**, **`frostmp_core.py`**, **`frostmp_gui.py`** — Steuerung/Download-Logik für den Launcher
 
-**Nicht** hier: Skyrim-MP-Server, Client-Mod-Code oder `chat-server` — das liegt im Repository **Frosthold-Server**.
+Das Skyrim-Multiplayer-Setup baut auf **SkyMP** auf ([Repository](https://github.com/skyrim-multiplayer/skymp)); alles rund um FrostholdRP (Launcher, Chat, Konfiguration, eigener Server) wird hier separat gepflegt.
