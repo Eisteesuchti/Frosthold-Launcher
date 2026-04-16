@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, shell, dialog, net } = require('electron');
 const path = require('path');
+const http = require('http');
 const { spawn, execFile } = require('child_process');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
@@ -590,4 +591,153 @@ ipcMain.handle('quick-health-check', async () => {
     status = { error: String(e.message || e) };
   }
   return { manifest: m, status };
+});
+
+// ────────────────────────────────────────────────────────
+// Discord OAuth2 Login
+// ────────────────────────────────────────────────────────
+
+const DISCORD_CLIENT_ID = '1494190090480517180';
+const DISCORD_REDIRECT_URI = 'http://localhost:39015/callback';
+const DISCORD_SCOPES = 'identify';
+
+function getDiscordSessionPath() {
+  return path.join(app.getPath('userData'), 'discord-session.json');
+}
+
+function loadDiscordSession() {
+  try {
+    const p = getDiscordSessionPath();
+    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8'));
+  } catch (_) {}
+  return null;
+}
+
+function saveDiscordSession(session) {
+  fs.writeFileSync(getDiscordSessionPath(), JSON.stringify(session, null, 2), 'utf8');
+}
+
+function clearDiscordSession() {
+  try { fs.unlinkSync(getDiscordSessionPath()); } catch (_) {}
+}
+
+/** Starts a one-shot HTTP server to capture the OAuth2 callback, returns the auth code. */
+function waitForOAuthCallback(timeoutMs = 120000) {
+  return new Promise((resolve, reject) => {
+    const server = http.createServer((req, res) => {
+      const url = new URL(req.url, `http://localhost:39015`);
+      if (url.pathname === '/callback') {
+        const code = url.searchParams.get('code');
+        const error = url.searchParams.get('error');
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        if (code) {
+          res.end('<html><body style="background:#1a1a2e;color:#eee;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><h2>Anmeldung erfolgreich! Du kannst dieses Fenster schließen.</h2></body></html>');
+        } else {
+          res.end('<html><body style="background:#1a1a2e;color:#eee;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><h2>Anmeldung fehlgeschlagen. Bitte versuche es erneut.</h2></body></html>');
+        }
+        cleanup();
+        if (error) reject(new Error(`Discord OAuth error: ${error}`));
+        else if (code) resolve(code);
+        else reject(new Error('No code received'));
+      }
+    });
+
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error('OAuth timeout'));
+    }, timeoutMs);
+
+    function cleanup() {
+      clearTimeout(timer);
+      try { server.close(); } catch (_) {}
+    }
+
+    server.on('error', (err) => {
+      cleanup();
+      reject(err);
+    });
+
+    server.listen(39015);
+  });
+}
+
+/** Exchanges the auth code with our chat server for a session. */
+async function exchangeCodeWithChatServer(code) {
+  const cfg = loadLocalConfig();
+  const wsUrl = String(cfg.frosthold_chat_ws_url || '').trim();
+  const match = wsUrl.match(/^wss?:\/\/([^:/]+)/);
+  const host = match ? match[1] : '188.245.77.170';
+  const httpPort = 3212;
+
+  return new Promise((resolve, reject) => {
+    const postData = JSON.stringify({ code });
+    const req = http.request({
+      hostname: host,
+      port: httpPort,
+      path: '/auth/discord',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+      },
+      timeout: 15000,
+    }, (res) => {
+      let body = '';
+      res.on('data', (d) => { body += d; });
+      res.on('end', () => {
+        try {
+          const j = JSON.parse(body);
+          if (res.statusCode === 200 && j.sessionToken) {
+            resolve(j);
+          } else {
+            reject(new Error(j.error || `HTTP ${res.statusCode}`));
+          }
+        } catch {
+          reject(new Error('Invalid response from chat server'));
+        }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Chat server timeout')); });
+    req.write(postData);
+    req.end();
+  });
+}
+
+ipcMain.handle('discord-login', async () => {
+  try {
+    const callbackPromise = waitForOAuthCallback();
+
+    const authUrl = `https://discord.com/api/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(DISCORD_REDIRECT_URI)}&response_type=code&scope=${DISCORD_SCOPES}`;
+    await shell.openExternal(authUrl);
+
+    const code = await callbackPromise;
+    const session = await exchangeCodeWithChatServer(code);
+
+    saveDiscordSession(session);
+
+    // Update chat credentials in launcher config
+    const prev = loadLocalConfig();
+    prev.frosthold_chat_enabled = true;
+    prev.frosthold_chat_user_id = session.sessionToken;
+    prev.frosthold_chat_secret = session.sessionToken;
+    saveLocalConfig(prev);
+
+    return { ok: true, ...session };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) };
+  }
+});
+
+ipcMain.handle('discord-logout', async () => {
+  clearDiscordSession();
+  const prev = loadLocalConfig();
+  prev.frosthold_chat_user_id = '';
+  prev.frosthold_chat_secret = '';
+  saveLocalConfig(prev);
+  return { ok: true };
+});
+
+ipcMain.handle('discord-session', async () => {
+  return loadDiscordSession();
 });

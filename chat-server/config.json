@@ -1,13 +1,9 @@
 {
   "port": 3211,
+  "httpPort": 3212,
   "localRadius": 3000,
   "maxMessageLength": 120,
-  "users": [
-    {
-      "userId": "player1",
-      "secret": "changeme-secret-1",
-      "displayName": "Spieler 1",
-      "tag": ""
-    }
-  ]
+  "discordClientId": "1494190090480517180",
+  "discordRedirectUri": "http://localhost:39015/callback",
+  "tags": {}
 }

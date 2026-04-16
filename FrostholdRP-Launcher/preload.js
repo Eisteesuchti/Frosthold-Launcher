@@ -17,4 +17,7 @@ contextBridge.exposeInMainWorld('fh', {
   quickHealthCheck: () => ipcRenderer.invoke('quick-health-check'),
   appMeta: () => ipcRenderer.invoke('app-meta'),
   createDesktopShortcut: () => ipcRenderer.invoke('create-desktop-shortcut'),
+  discordLogin: () => ipcRenderer.invoke('discord-login'),
+  discordLogout: () => ipcRenderer.invoke('discord-logout'),
+  discordSession: () => ipcRenderer.invoke('discord-session'),
 });

@@ -358,6 +358,52 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  // ── Discord Login ──
+  async function refreshDiscordUI() {
+    const session = await fh.discordSession();
+    const label = $('discord-login-label');
+    const btn = $('btn-discord-login');
+    if (session && session.displayName) {
+      label.textContent = session.displayName;
+      btn.title = `Angemeldet als ${session.displayName} (Klick = Abmelden)`;
+      btn.dataset.loggedIn = '1';
+    } else {
+      label.textContent = 'Anmelden';
+      btn.title = 'Mit Discord anmelden';
+      btn.dataset.loggedIn = '';
+    }
+  }
+  refreshDiscordUI();
+
+  $('btn-discord-login').addEventListener('click', async () => {
+    const btn = $('btn-discord-login');
+    if (btn.disabled) return;
+
+    if (btn.dataset.loggedIn === '1') {
+      await fh.discordLogout();
+      showToast('Discord-Abmeldung erfolgreich.', 4000);
+      await refreshDiscordUI();
+      return;
+    }
+
+    btn.disabled = true;
+    $('discord-login-label').textContent = 'Warte…';
+    showToast('Browser wird geöffnet — bitte bei Discord anmelden…', 8000);
+    try {
+      const r = await fh.discordLogin();
+      if (r && r.ok) {
+        showToast(`Angemeldet als ${r.displayName}!`, 5000);
+      } else {
+        showToast(`Anmeldung fehlgeschlagen: ${r.error || 'Unbekannt'}`, 8000);
+      }
+    } catch (e) {
+      showToast(`Fehler: ${e}`, 8000);
+    } finally {
+      btn.disabled = false;
+      await refreshDiscordUI();
+    }
+  });
+
   $('btn-play').addEventListener('click', async () => {
     const btn = $('btn-play');
     btn.disabled = true;
