@@ -97,7 +97,9 @@
     "publish": {
       "provider": "github",
       "owner": "Eisteesuchti",
-      "repo": "Frosthold-Launcher"
+      "repo": "Frosthold-Launcher",
+      "draft": false,
+      "prerelease": false
     }
   },
   "dependencies": {
