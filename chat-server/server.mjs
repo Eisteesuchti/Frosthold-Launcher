@@ -463,12 +463,14 @@ function recomputeClientRole(info) {
 }
 
 function buildCommandsListForActor(actor) {
+  const permissions = Array.isArray(actor.permissions) ? actor.permissions : [];
+  const actorForPerms = { ...actor, permissions };
   const lines = [];
   for (const e of COMMANDS_HELP_ENTRIES) {
-    if (e.permission != null && !roleHasPermission({ permissions: actor.permissions }, e.permission)) {
+    if (e.permission != null && !roleHasPermission({ permissions }, e.permission)) {
       continue;
     }
-    const block = e.lines(actor);
+    const block = e.lines(actorForPerms);
     if (!block || !block.length) continue;
     lines.push(...block);
   }
@@ -538,7 +540,8 @@ function tryHandleStaffChatLine(ws, actor, text) {
       sendSystem(ws, 'Dir stehen keine Chat-Befehle zur Verfügung.', { kind: 'info', command: 'commands' });
       return true;
     }
-    sendSystem(ws, `Befehle für deinen Rang:\n${lines.join('\n')}`, { kind: 'info', command: 'commands' });
+    // Eine Zeile: viele Ingame-Chat-UIs zeigen nur die erste Zeile (Zeilenumbruch = Rest unsichtbar).
+    sendSystem(ws, `Befehle für deinen Rang: ${lines.join(' | ')}`, { kind: 'info', command: 'commands' });
     return true;
   }
 
