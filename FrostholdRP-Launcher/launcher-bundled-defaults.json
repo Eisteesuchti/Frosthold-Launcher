@@ -4,8 +4,8 @@
   "status_url": "http://188.245.77.170:3000/",
   "client_dist_source": "",
   "launcher_update_feed_url": "",
-  "frosthold_chat_enabled": false,
-  "frosthold_chat_ws_url": "",
-  "frosthold_chat_user_id": "",
-  "frosthold_chat_secret": ""
+  "frosthold_chat_enabled": true,
+  "frosthold_chat_ws_url": "ws://188.245.77.170:3211",
+  "frosthold_chat_user_id": "player1",
+  "frosthold_chat_secret": "changeme-secret-1"
 }

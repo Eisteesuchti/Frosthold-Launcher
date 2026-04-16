@@ -14,5 +14,8 @@ FrostholdRP-Launcher/node_modules/
 FrostholdRP-Launcher/dist-build/
 FrostholdRP-Launcher/python-runtime/
 
+# Chat-Server
+chat-server/node_modules/
+
 # Eigenes Skyrim-/Build-Repo (separates Git in ./Frosthold/)
 Frosthold/

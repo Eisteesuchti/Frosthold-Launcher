@@ -1,0 +1,13 @@
+{
+  "name": "frosthold-chat-server",
+  "version": "1.0.0",
+  "description": "WebSocket chat server for FrostholdRP ingame chat",
+  "main": "server.mjs",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

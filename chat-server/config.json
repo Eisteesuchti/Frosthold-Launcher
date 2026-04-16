@@ -1,0 +1,13 @@
+{
+  "port": 3211,
+  "localRadius": 3000,
+  "maxMessageLength": 120,
+  "users": [
+    {
+      "userId": "player1",
+      "secret": "changeme-secret-1",
+      "displayName": "Spieler 1",
+      "tag": ""
+    }
+  ]
+}
