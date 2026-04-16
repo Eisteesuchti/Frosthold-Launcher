@@ -375,14 +375,19 @@ function distance(a, b) {
 }
 
 /**
- * System-/Feedback-Zeile nur für die Verbindung, die den Befehl ausgeführt hat (nicht broadcast).
- * @param {Record<string, unknown>} [meta] z. B. kind: 'success'|'info'|'error', command, targetDisplayName — für Ingame-Chat-UI
+ * Feedback nur an diese WebSocket-Verbindung (kein Broadcast).
+ * Als normale Chat-Zeile (`type: 'chat'`), weil viele Ingame-Clients `type: 'system'` nicht anzeigen.
+ * @param {Record<string, unknown>} [meta] z. B. kind: 'success'|'info'|'error', command, targetDisplayName — für zukünftige UI
  */
 function sendSystem(ws, message, meta = {}) {
   try {
     ws.send(JSON.stringify({
-      type: 'system',
-      message: String(message),
+      type: 'chat',
+      channel: 'local',
+      displayName: 'System',
+      tag: '',
+      chatBadge: '',
+      text: String(message),
       onlyExecutor: true,
       ...meta,
     }));
