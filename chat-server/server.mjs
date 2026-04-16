@@ -148,41 +148,49 @@ function resolveEffectiveRole(discordId) {
 const BADGE_TOGGLE_MIN_RANK = ROLE_DEFINITIONS.trial_gamemaster?.rank ?? 35;
 
 /** Implementierte Chat-Befehle (führendes /wort). Alles andere → „Es gibt keinen solchen Befehl.“ */
-const KNOWN_CHAT_COMMANDS = new Set(['kick', 'ban', 'gmbadge', 'badge', 'commands', 'account']);
+const KNOWN_CHAT_COMMANDS = new Set(['kick', 'ban', 'gmbadge', 'badge', 'commands', 'help', 'account']);
 
-/** Einträge für /commands: permission null = immer listen (außer lines gibt null); sonst nur mit Recht. */
-const COMMANDS_HELP_ENTRIES = [
+/**
+ * Hilfe: ids[0] = Kurzname in /help-Listen; weitere ids = Aliase für /help name.
+ * describe(actor) = ausführliche Zeile (Syntax + Kurzbeschreibung); null = Rang hat Befehl nicht.
+ * @typedef {{ ids: string[], permission: string | null, describe: (a: object) => string | null }} ChatCmdDef
+ * @type {ChatCmdDef[]}
+ */
+const CHAT_COMMAND_DEFS = [
   {
-    id: 'commands',
+    ids: ['help'],
     permission: null,
-    lines: () => ['/commands — Listet alle Befehle auf, die dein Rang ausführen darf.'],
+    describe: () => '/help — Nur Namen der nutzbaren Befehle. /help befehl — Syntax und Erklärung (z. B. /help kick).',
   },
   {
-    id: 'gmbadge',
+    ids: ['commands'],
     permission: null,
-    lines: (a) => {
+    describe: () => '/commands — Wie /help: kurz nur Befehlsnamen; /commands befehl wie /help befehl.',
+  },
+  {
+    ids: ['gmbadge', 'badge'],
+    permission: null,
+    describe: (a) => {
       if (!a.chatBadge || a.rank < BADGE_TOGGLE_MIN_RANK) return null;
-      return ['/gmbadge on | off — GM-Rollen-Präfix im Chat ein- oder ausblenden. (/badge = Alias)'];
+      return '/gmbadge on | off — GM-Rollen-Präfix im Chat ein- oder ausblenden. Alias: /badge.';
     },
   },
   {
-    id: 'kick',
+    ids: ['kick'],
     permission: 'chat.kick',
-    lines: () => ['/kick <Anzeigename oder Discord-ID> — Spieler vom Chat trennen.'],
+    describe: () => '/kick (Anzeigename oder Discord-ID) — Ziel muss im Chat online sein. Trennt die Verbindung (Kick).',
   },
   {
-    id: 'ban',
+    ids: ['ban'],
     permission: 'chat.ban',
-    lines: () => ['/ban <Anzeigename oder Discord-ID> — Spieler vom Chat verbannen (Verbindung trennen).'],
+    describe: () => '/ban (Anzeigename oder Discord-ID) — Ziel muss im Chat online sein. Trennt die Verbindung (Ban).',
   },
   {
-    id: 'account',
+    ids: ['account'],
     permission: null,
-    lines: (a) => {
+    describe: (a) => {
       if (discordRoleIdOnly(a.discordId) !== 'game_admin') return null;
-      return [
-        '/account set acclevel (Anzeigename oder Discord-ID) 0|1|2|3|4 - Ingame-Stufe: Player, VIP, TGM, GM, DEV (nur GameAdmin).',
-      ];
+      return '/account set acclevel (Anzeigename oder Discord-ID) 0|1|2|3|4 — Stufen: 0 Player, 1 VIP, 2 TGM, 3 GM, 4 Developer (nur GameAdmin).';
     },
   },
 ];
@@ -467,19 +475,63 @@ function recomputeClientRole(info) {
   });
 }
 
-function buildCommandsListForActor(actor) {
-  const permissions = Array.isArray(actor.permissions) ? actor.permissions : [];
-  const actorForPerms = { ...actor, permissions };
-  const lines = [];
-  for (const e of COMMANDS_HELP_ENTRIES) {
-    if (e.permission != null && !roleHasPermission({ permissions }, e.permission)) {
-      continue;
-    }
-    const block = e.lines(actorForPerms);
-    if (!block || !block.length) continue;
-    lines.push(...block);
+/** @param {string} name */
+function findHelpDefByName(name) {
+  const n = String(name).trim().toLowerCase();
+  if (!n) return null;
+  for (const def of CHAT_COMMAND_DEFS) {
+    if (def.ids.some((id) => id === n)) return def;
   }
-  return lines;
+  return null;
+}
+
+/** @param {ClientInfo} actor */
+function actorMayUseDef(actor, def) {
+  const permissions = Array.isArray(actor.permissions) ? actor.permissions : [];
+  if (def.permission != null && !roleHasPermission({ permissions }, def.permission)) return false;
+  const d = def.describe(actor);
+  return typeof d === 'string' && d.length > 0;
+}
+
+/** @param {ClientInfo} actor */
+function compactHelpNamesForActor(actor) {
+  return CHAT_COMMAND_DEFS.filter((d) => actorMayUseDef(actor, d)).map((d) => d.ids[0]);
+}
+
+/**
+ * /help und /commands: ohne Argument nur Befehlsnamen; mit einem Argument Hilfetext.
+ * @param {import('ws').WebSocket} ws
+ * @param {ClientInfo} actor
+ * @param {string} text
+ * @param {string} cmd
+ */
+function tryHelpOrCommands(ws, actor, text, cmd) {
+  const rest = String(text).trim().replace(/^\/(?:help|commands)\s*/i, '').trim().toLowerCase();
+  const token = rest.split(/\s+/)[0] || '';
+  const metaCmd = cmd === 'help' ? 'help' : 'commands';
+  if (!token) {
+    const names = compactHelpNamesForActor(actor);
+    if (!names.length) {
+      sendSystem(ws, 'Dir stehen keine Chat-Befehle zur Verfügung.', { kind: 'info', command: metaCmd });
+      return true;
+    }
+    sendSystem(ws, `Deine Befehle: ${names.join(', ')}. Details: /help befehl (z. B. /help kick)`, {
+      kind: 'info',
+      command: metaCmd,
+    });
+    return true;
+  }
+  const def = findHelpDefByName(token);
+  if (!def || !actorMayUseDef(actor, def)) {
+    sendSystem(ws, `Kein Hilfetext für "${token}" oder nicht mit deinem Rang nutzbar.`, {
+      kind: 'error',
+      command: metaCmd,
+    });
+    return true;
+  }
+  const body = def.describe(actor);
+  sendSystem(ws, body || 'Keine Beschreibung.', { kind: 'info', command: metaCmd });
+  return true;
 }
 
 /**
@@ -539,14 +591,8 @@ function tryHandleStaffChatLine(ws, actor, text) {
     return true;
   }
 
-  if (cmd === 'commands') {
-    const lines = buildCommandsListForActor(actor);
-    if (!lines.length) {
-      sendSystem(ws, 'Dir stehen keine Chat-Befehle zur Verfügung.', { kind: 'info', command: 'commands' });
-      return true;
-    }
-    // Eine Zeile: viele Ingame-Chat-UIs zeigen nur die erste Zeile (Zeilenumbruch = Rest unsichtbar).
-    sendSystem(ws, `Befehle für deinen Rang: ${lines.join(' | ')}`, { kind: 'info', command: 'commands' });
+  if (cmd === 'help' || cmd === 'commands') {
+    tryHelpOrCommands(ws, actor, t, cmd);
     return true;
   }
 
