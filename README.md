@@ -11,17 +11,20 @@ Dieses Repository enthält unter anderem:
 
 Das Skyrim-Multiplayer-Setup baut auf **SkyMP** auf ([Repository](https://github.com/skyrim-multiplayer/skymp)); FrostholdRP pflegt Launcher und Konfiguration separat.
 
-## Chat-Server weiterentwickeln (nur noch Repo Frosthold-Server)
+## Chat-Server (nur noch Repo Frosthold-Server)
 
-Der Ordner `chat-server/` in diesem Workspace ist **gitignored** — er taucht **nicht** im Launcher-Repo auf. Änderungen am Chat gehören ausschließlich ins **[Frosthold-Server](https://github.com/Eisteesuchti/Frosthold-Server)**-Repository.
+**Lokal bleibt alles wie bei dir:** Workspace `…\Frosthold Server\` mit **`FrostholdRP-Launcher/`**, **`Frosthold/`** und **`chat-server/`** — du arbeitest weiter genau in diesem Ordner.
 
-**Lokal wie bisher arbeiten:**
+**Nur die Git-Zuordnung:** Änderungen am Chat sollen **nicht** ins Repo **Frosthold-Launcher** (dieses Repo), sondern ins **[Frosthold-Server](https://github.com/Eisteesuchti/Frosthold-Server)**. Dafür ist `chat-server/` hier per **`.gitignore`** vom Launcher-Repo ausgeschlossen — der Launcher „sieht“ den Chat-Ordner beim Commit nicht.
 
-1. **`Frosthold-Server`** einmal klonen (eigener Ordner, z. B. neben diesem Projekt):  
-   `git clone https://github.com/Eisteesuchti/Frosthold-Server.git`
-2. Im Klon unter **`chat-server/`** editieren (`server.mjs`, `roles.mjs`, …), dort **`git add` / `commit` / `push`** zu `origin` (Branch `main`).
-3. Optional: dieselbe `config.json` wie auf dem VPS in **`chat-server/config.json`** legen (liegt bei **Frosthold-Server** in `.gitignore`, wird nicht committed).
+**Empfohlen (ein Pfad, richtiges Remote):** **`Frosthold-Server`** einmal klonen (z. B. `…\Programmieren Ordner\Frosthold-Server\`), dann unter Windows die **Junction** legen, damit `…\Frosthold Server\chat-server` physisch derselbe Ordner wie `…\Frosthold-Server\chat-server` ist:
 
-**Auf dem Hetzner:** im Klon von **`Frosthold-Server`** `git pull`, dann Chat neu starten (`pm2 restart …`).
+1. `config.json` (und ggf. `node_modules`) aus dem alten `chat-server` sichern.
+2. Den bisherigen Ordner `Frosthold Server\chat-server` löschen (nur wenn leer/ersetzbar).
+3. Als Administrator in **cmd**:  
+   `mklink /J "C:\Users\Danie\Desktop\Programmieren Ordner\Frosthold Server\chat-server" "C:\Users\Danie\Desktop\Programmieren Ordner\Frosthold-Server\chat-server"`  
+   (Zielpfad anpassen, wo dein **Frosthold-Server**-Klon liegt.)
 
-**Optional ein Fenster:** Ordner-Verknüpfung (Junction) von diesem Workspace `chat-server` auf `…\Frosthold-Server\chat-server` — dann öffnest du hier weiter den gleichen Pfad, bearbeitest aber die Dateien im Server-Repo (Push immer aus dem **Frosthold-Server**-Klon heraus).
+Danach öffnest du in Cursor weiterhin `…\Frosthold Server\chat-server\…` — `git pull` / `git push` im Terminal **aus diesem Ordner** nutzen den aufgelösten Pfad und landen im **Frosthold-Server**-Repository.
+
+**Auf dem Hetzner:** im Klon von **Frosthold-Server** `git pull`, Chat neu starten (`pm2 restart …`), falls der Prozess noch auf einen alten Pfad zeigt.
