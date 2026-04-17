@@ -97,7 +97,11 @@ function applyBundledDefaultsToDisk() {
   const defaults = {
     server_ip: '188.245.77.170',
     server_port: 7777,
-    profile_id: 1,
+    // profile_id: 0 = "noch kein Discord-Login". Ein gueltiger profile_id wird
+    // ausschliesslich vom Chat-Server nach erfolgreicher Discord-OAuth-Exchange
+    // vergeben (deterministisch aus Discord-User-ID). Ohne Login bleibt der Wert
+    // 0 und der Python-Core verweigert den Spielstart mit error=login_required.
+    profile_id: 0,
     skyrim_dir: '',
     client_dist_source: '',
     status_url: DEFAULT_STATUS_URL,
@@ -145,7 +149,10 @@ function applyBundledDefaultsToDisk() {
   merged.server_port = 7777;
   if (!merged.server_ip) merged.server_ip = defaults.server_ip;
   if (!merged.status_url) merged.status_url = defaults.status_url;
-  if (merged.profile_id == null || merged.profile_id < 1) merged.profile_id = 1;
+  // profile_id NIE automatisch auf 1 ziehen — nur Discord-Login darf ihn setzen.
+  if (merged.profile_id == null || typeof merged.profile_id !== 'number' || merged.profile_id < 0) {
+    merged.profile_id = 0;
+  }
   try {
     const serialized = `${JSON.stringify(merged, null, 2)}\n`;
     let needWrite = true;
@@ -220,7 +227,20 @@ function getBundledVcRedistExe() {
   return null;
 }
 
-function runPythonJson(args) {
+/**
+ * Startet den Python-Subprozess und parst stdout zeilenweise als JSON.
+ *
+ * Protokoll zwischen Python und Launcher:
+ * - Jede Zeile ist ein eigenes JSON-Objekt.
+ * - Zeilen mit "event" ("progress" | "status") werden live an onProgress gemeldet
+ *   und an den Renderer fuer den Download-Balken weitergereicht.
+ * - Die letzte Zeile ohne "event"-Feld ist das Endresultat (gleiches Format
+ *   wie vorher: { ok, error, message, ... }).
+ *
+ * @param {string[]} args CLI-Argumente fuer FrostMP-Launcher.py (z. B. ["--json-play"]).
+ * @param {(evt: object) => void} [onProgress] Optionaler Live-Callback fuer "event"-Zeilen.
+ */
+function runPythonJson(args, onProgress) {
   return new Promise((resolve, reject) => {
     const script = getPythonScriptPath();
     if (!script) {
@@ -236,6 +256,10 @@ function runPythonJson(args) {
     if (bundledVcRedist) {
       env.FROSTMP_BUNDLED_VCREDIST = bundledVcRedist;
     }
+    // Python soll stdout line-buffered schreiben, damit Progress-Events sofort
+    // ankommen und nicht erst am Prozess-Ende. -u deaktiviert die Buffering-
+    // Optimierung der Runtime.
+    env.PYTHONUNBUFFERED = '1';
     const opts = {
       cwd: path.dirname(script),
       windowsHide: true,
@@ -244,10 +268,10 @@ function runPythonJson(args) {
 
     const attempts = [];
     const bundled = getBundledPythonExe();
-    if (bundled) attempts.push({ cmd: bundled, argv: [script, ...args] });
-    attempts.push({ cmd: 'python', argv: [script, ...args] });
+    if (bundled) attempts.push({ cmd: bundled, argv: ['-u', script, ...args] });
+    attempts.push({ cmd: 'python', argv: ['-u', script, ...args] });
     if (process.platform === 'win32') {
-      attempts.push({ cmd: 'py', argv: ['-3', script, ...args] });
+      attempts.push({ cmd: 'py', argv: ['-3', '-u', script, ...args] });
     }
 
     let idx = 0;
@@ -265,14 +289,63 @@ function runPythonJson(args) {
       const proc = spawn(cmd, argv, opts);
       let out = '';
       let err = '';
-      proc.stdout.on('data', (d) => { out += d.toString(); });
+      let lineBuf = '';
+      let finalResult = null;
+
+      const handleLine = (rawLine) => {
+        const line = rawLine.trim();
+        if (!line) return;
+        try {
+          const parsed = JSON.parse(line);
+          if (parsed && typeof parsed === 'object' && typeof parsed.event === 'string') {
+            if (typeof onProgress === 'function') {
+              try { onProgress(parsed); } catch (_) {}
+            }
+            // Progress-Events auch global per IPC an alle offenen Fenster broadcasten
+            // (Renderer haengt den Listener vor dem Click-Handler an).
+            try {
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('install-progress', parsed);
+              }
+            } catch (_) {}
+          } else {
+            finalResult = parsed;
+          }
+        } catch (_) {
+          // Nicht-JSON-Zeilen ignorieren (z. B. print-Debug aus Python).
+        }
+      };
+
+      proc.stdout.on('data', (d) => {
+        const s = d.toString();
+        out += s;
+        lineBuf += s;
+        let nl;
+        while ((nl = lineBuf.indexOf('\n')) !== -1) {
+          const rawLine = lineBuf.slice(0, nl).replace(/\r$/, '');
+          lineBuf = lineBuf.slice(nl + 1);
+          handleLine(rawLine);
+        }
+      });
       proc.stderr.on('data', (d) => { err += d.toString(); });
       proc.on('close', (code) => {
-        const line = out.trim().split(/\r?\n/).filter(Boolean).pop() || '';
-        try {
-          const j = JSON.parse(line);
-          resolve({ code, json: j, stderr: err });
-        } catch {
+        // Letzter unvollstaendiger Chunk noch einmal durchfuettern.
+        if (lineBuf.trim()) handleLine(lineBuf);
+        if (finalResult === null) {
+          // Fallback auf legacy-Verhalten: letzte beliebige JSON-Zeile in stdout.
+          const lines = out.trim().split(/\r?\n/).filter(Boolean);
+          for (let i = lines.length - 1; i >= 0 && finalResult === null; i -= 1) {
+            try {
+              const j = JSON.parse(lines[i]);
+              if (j && typeof j === 'object' && typeof j.event !== 'string') {
+                finalResult = j;
+              }
+            } catch (_) {}
+          }
+        }
+        if (finalResult !== null) {
+          resolve({ code, json: finalResult, stderr: err });
+        } else {
           resolve({ code, json: null, raw: out, stderr: err });
         }
       });
@@ -463,7 +536,7 @@ ipcMain.handle('load-config', async () => {
   const defaults = {
     server_ip: '188.245.77.170',
     server_port: 7777,
-    profile_id: 1,
+    profile_id: 0,
     skyrim_dir: '',
     client_dist_source: '',
     status_url: DEFAULT_STATUS_URL,
@@ -486,7 +559,7 @@ ipcMain.handle('save-config', async (_e, cfg) => {
   const defaults = {
     server_ip: '188.245.77.170',
     server_port: 7777,
-    profile_id: 1,
+    profile_id: 0,
     skyrim_dir: '',
     client_dist_source: '',
     status_url: DEFAULT_STATUS_URL,
@@ -513,7 +586,10 @@ ipcMain.handle('save-config', async (_e, cfg) => {
   merged.server_port = 7777;
   if (!merged.server_ip) merged.server_ip = defaults.server_ip;
   if (!merged.status_url) merged.status_url = defaults.status_url;
-  if (merged.profile_id == null || merged.profile_id < 1) merged.profile_id = 1;
+  // profile_id NIE automatisch auf 1 ziehen — nur Discord-Login darf ihn setzen.
+  if (merged.profile_id == null || typeof merged.profile_id !== 'number' || merged.profile_id < 0) {
+    merged.profile_id = 0;
+  }
   saveLocalConfig(merged);
   return true;
 });
@@ -537,12 +613,83 @@ ipcMain.handle('skyrim-status', async () => {
   }
 });
 
+/**
+ * Stellt sicher, dass profile_id in der lokalen Config aktuell ist.
+ * Wird vor jedem Play/Setup aufgerufen.
+ *
+ * Logik:
+ * - Keine Session-Datei: profile_id wird auf 0 gesetzt (blockt Play mit login_required).
+ * - Session vorhanden & Chat-Server bestaetigt sie: profile_id wird uebernommen.
+ * - Session vorhanden, Chat-Server sagt explizit 'ungueltig': lokale Session +
+ *   profile_id werden geloescht (blockt Play, User muss sich neu anmelden).
+ * - Chat-Server nicht erreichbar (Netzwerkfehler): letzte bekannte profile_id
+ *   bleibt bestehen (offline-Toleranz, damit voruebergehende Stoerung nicht
+ *   alle User aussperrt).
+ */
+async function syncProfileIdFromSession() {
+  const session = loadDiscordSession();
+  const prev = loadLocalConfig();
+  const token = session && typeof session.sessionToken === 'string' ? session.sessionToken.trim() : '';
+
+  if (!token) {
+    if (prev.profile_id && prev.profile_id !== 0) {
+      prev.profile_id = 0;
+      saveLocalConfig(prev);
+    }
+    return 0;
+  }
+
+  const result = await refreshSessionFromChatServer(token);
+
+  if (result.status === 'ok' && result.session && typeof result.session.profileId === 'number'
+      && Number.isFinite(result.session.profileId) && result.session.profileId >= 1) {
+    const pid = Math.floor(result.session.profileId);
+    if (prev.profile_id !== pid) {
+      prev.profile_id = pid;
+      saveLocalConfig(prev);
+    }
+    // Verifizierten Wert zusaetzlich in die Session-Datei schreiben. Diese ist
+    // die "Quelle der Wahrheit" fuer offline-Fallbacks — damit kein Angreifer
+    // durch manuelles Editieren der launcher-config.json einen fremden Char
+    // uebernehmen kann.
+    const sessionFile = { ...(session || {}), sessionToken: token, profileId: pid };
+    try { saveDiscordSession(sessionFile); } catch (_) {}
+    return pid;
+  }
+
+  if (result.status === 'invalid') {
+    // Session wurde vom Chat-Server explizit abgelehnt -> lokal alles
+    // wegraeumen, damit kein alter profile_id haengenbleibt.
+    clearDiscordSession();
+    prev.profile_id = 0;
+    prev.frosthold_chat_user_id = '';
+    prev.frosthold_chat_secret = '';
+    saveLocalConfig(prev);
+    return 0;
+  }
+
+  // status === 'unreachable' -> letzte VOM CHAT-SERVER VERIFIZIERTE profile_id
+  // aus der Session-Datei (nicht aus der launcher-config, die koennte manipuliert
+  // sein). Wenn die Session noch nie verifiziert wurde, blocken wir sicherheits-
+  // halber mit profile_id=0.
+  const verifiedPid = session && typeof session.profileId === 'number'
+    && Number.isFinite(session.profileId) && session.profileId >= 1
+    ? Math.floor(session.profileId)
+    : 0;
+  if (prev.profile_id !== verifiedPid) {
+    prev.profile_id = verifiedPid;
+    saveLocalConfig(prev);
+  }
+  return verifiedPid;
+}
+
 ipcMain.handle('play', async () => {
   const py = getPythonScriptPath();
   if (!py) {
     return { ok: false, error: 'python_script_missing', message: 'FrostMP-Launcher.py nicht gefunden (Ordner Frosthold Server).' };
   }
   try {
+    await syncProfileIdFromSession();
     const r = await runPythonJson(['--json-play']);
     if (r.json) return r.json;
     return { ok: false, error: 'bad_response', raw: r.raw, stderr: r.stderr };
@@ -557,6 +704,7 @@ ipcMain.handle('setup', async () => {
     return { ok: false, error: 'python_script_missing', message: 'FrostMP-Launcher.py nicht gefunden (Ordner Frosthold Server).' };
   }
   try {
+    await syncProfileIdFromSession();
     const r = await runPythonJson(['--json-setup']);
     if (r.json) return r.json;
     return { ok: false, error: 'bad_response', raw: r.raw, stderr: r.stderr };
@@ -704,12 +852,72 @@ function waitForOAuthCallback(timeoutMs = 120000) {
   });
 }
 
-/** Exchanges the auth code with our chat server for a session. */
-async function exchangeCodeWithChatServer(code) {
+/** Extrahiert Host des Chat-Servers aus der WebSocket-URL in der Config. */
+function getChatServerHost() {
   const cfg = loadLocalConfig();
   const wsUrl = String(cfg.frosthold_chat_ws_url || '').trim();
   const match = wsUrl.match(/^wss?:\/\/([^:/]+)/);
-  const host = match ? match[1] : '188.245.77.170';
+  return match ? match[1] : '188.245.77.170';
+}
+
+/**
+ * Fragt beim Chat-Server nach: existiert die Session-ID noch + welche profile_id
+ * gehoert dazu?
+ *
+ * Return-Format:
+ *   { status: 'ok', session: {...} }       - Session gueltig
+ *   { status: 'invalid' }                  - Chat-Server kennt die Session nicht
+ *                                            mehr (abgelaufen / Server-Restart /
+ *                                            manuell invalidiert) -> User muss
+ *                                            neu einloggen
+ *   { status: 'unreachable' }              - Netzwerkfehler, Server erreicht nicht
+ *                                            -> letzte bekannte profile_id behalten
+ */
+async function refreshSessionFromChatServer(sessionToken) {
+  if (!sessionToken || typeof sessionToken !== 'string') {
+    return { status: 'invalid' };
+  }
+  const host = getChatServerHost();
+  const httpPort = 3212;
+
+  return new Promise((resolve) => {
+    const req = http.request({
+      hostname: host,
+      port: httpPort,
+      path: `/auth/session?token=${encodeURIComponent(sessionToken)}`,
+      method: 'GET',
+      timeout: 8000,
+    }, (res) => {
+      let body = '';
+      res.on('data', (d) => { body += d; });
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          try {
+            const j = JSON.parse(body);
+            if (j && typeof j === 'object') {
+              resolve({ status: 'ok', session: j });
+              return;
+            }
+          } catch {}
+          resolve({ status: 'invalid' });
+          return;
+        }
+        if (res.statusCode === 404 || res.statusCode === 401 || res.statusCode === 400) {
+          resolve({ status: 'invalid' });
+          return;
+        }
+        resolve({ status: 'unreachable' });
+      });
+    });
+    req.on('error', () => resolve({ status: 'unreachable' }));
+    req.on('timeout', () => { req.destroy(); resolve({ status: 'unreachable' }); });
+    req.end();
+  });
+}
+
+/** Exchanges the auth code with our chat server for a session. */
+async function exchangeCodeWithChatServer(code) {
+  const host = getChatServerHost();
   const httpPort = 3212;
 
   return new Promise((resolve, reject) => {
@@ -764,6 +972,14 @@ ipcMain.handle('discord-login', async () => {
     prev.frosthold_chat_enabled = true;
     prev.frosthold_chat_user_id = session.sessionToken;
     prev.frosthold_chat_secret = session.sessionToken;
+    // Der Chat-Server haengt nach erfolgreichem Discord-OAuth ein profileId
+    // in die Response. Das ist der EINZIGE Weg, wie der Launcher einen
+    // gueltigen profile_id in die Client-Settings schreibt. Ohne Discord-Login
+    // bleibt profile_id bei 0 und der Spielstart wird in frostmp_core.py mit
+    // error=login_required geblockt.
+    if (typeof session.profileId === 'number' && Number.isFinite(session.profileId) && session.profileId >= 1) {
+      prev.profile_id = Math.floor(session.profileId);
+    }
     saveLocalConfig(prev);
 
     return { ok: true, ...session };
@@ -777,6 +993,10 @@ ipcMain.handle('discord-logout', async () => {
   const prev = loadLocalConfig();
   prev.frosthold_chat_user_id = '';
   prev.frosthold_chat_secret = '';
+  // Nach Logout profile_id zuruecksetzen, damit die naechste Person am Rechner
+  // nicht aus Versehen auf dem vorherigen Charakter spielt. Neuer Discord-Login
+  // vergibt beim Einloggen den passenden profile_id neu.
+  prev.profile_id = 0;
   saveLocalConfig(prev);
   return { ok: true };
 });

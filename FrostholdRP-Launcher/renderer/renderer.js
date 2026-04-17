@@ -93,6 +93,134 @@ async function fillSettings() {
   $('set-skyrim').value = c.skyrim_dir || '';
 }
 
+// ────────────────────────────────────────────────────────
+// Download- / Install-Fortschritt (live aus dem Python-Backend)
+// ────────────────────────────────────────────────────────
+
+/**
+ * Formatiert ein Byte-Zaehler-Paar menschenlesbar, z. B. "42,3 MB / 101 MB".
+ */
+function formatBytes(n) {
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const units = ['B', 'kB', 'MB', 'GB'];
+  let i = 0;
+  let v = n;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i += 1;
+  }
+  const digits = v >= 100 ? 0 : v >= 10 ? 1 : 2;
+  return `${v.toFixed(digits).replace('.', ',')} ${units[i]}`;
+}
+
+let progressHideTimer = null;
+
+function showProgressPanel() {
+  if (progressHideTimer) { clearTimeout(progressHideTimer); progressHideTimer = null; }
+  const panel = $('progress-panel');
+  if (panel) panel.hidden = false;
+}
+
+function hideProgressPanel(delayMs = 0) {
+  const panel = $('progress-panel');
+  if (!panel) return;
+  if (progressHideTimer) { clearTimeout(progressHideTimer); progressHideTimer = null; }
+  if (delayMs > 0) {
+    progressHideTimer = setTimeout(() => {
+      panel.hidden = true;
+      resetProgressUi();
+    }, delayMs);
+  } else {
+    panel.hidden = true;
+    resetProgressUi();
+  }
+}
+
+function resetProgressUi() {
+  const lab = $('progress-label');
+  const pct = $('progress-percent');
+  const fill = $('progress-fill');
+  const meta = $('progress-meta');
+  const track = $('progress-track');
+  if (lab) lab.textContent = 'Installation wird vorbereitet…';
+  if (pct) pct.textContent = '—';
+  if (fill) {
+    fill.style.width = '0%';
+    fill.classList.remove('indeterminate');
+  }
+  if (meta) meta.innerHTML = '&nbsp;';
+  if (track) track.setAttribute('aria-valuenow', '0');
+}
+
+/**
+ * Konsumiert ein Event-Objekt vom Python-Backend und rendert es in den
+ * Fortschrittsbalken. Unterstuetzt "progress" (mit percent) und "status"
+ * (indeterminate, zeigt Spinner-Stripe).
+ */
+function applyProgressEvent(evt) {
+  if (!evt || typeof evt !== 'object') return;
+  const panel = $('progress-panel');
+  if (!panel) return;
+  showProgressPanel();
+
+  const lab = $('progress-label');
+  const pct = $('progress-percent');
+  const fill = $('progress-fill');
+  const meta = $('progress-meta');
+  const track = $('progress-track');
+
+  if (evt.event === 'progress') {
+    const label = evt.label || 'Installation…';
+    if (lab) lab.textContent = label;
+
+    if (typeof evt.percent === 'number' && Number.isFinite(evt.percent)) {
+      const clamped = Math.max(0, Math.min(100, evt.percent));
+      if (fill) {
+        fill.classList.remove('indeterminate');
+        fill.style.width = `${clamped}%`;
+      }
+      if (pct) pct.textContent = `${clamped.toFixed(1).replace('.', ',')} %`;
+      if (track) track.setAttribute('aria-valuenow', String(Math.round(clamped)));
+    } else {
+      if (fill) fill.classList.add('indeterminate');
+      if (pct) pct.textContent = '…';
+    }
+
+    if (meta) {
+      const done = Number(evt.bytesDone);
+      const total = Number(evt.bytesTotal);
+      if (Number.isFinite(total) && total > 0) {
+        // bytesDone/bytesTotal koennen bei Zips auch Datei-Zaehler sein —
+        // Heuristik: kleine Zahlen < 1 MB sind vermutlich Datei-Counts,
+        // ansonsten echte Bytes.
+        if (total < 1024 * 1024 && total < 5000) {
+          meta.textContent = `${done} / ${total} Dateien`;
+        } else {
+          const a = formatBytes(done);
+          const b = formatBytes(total);
+          meta.textContent = a && b ? `${a} / ${b}` : '';
+        }
+      } else {
+        meta.innerHTML = '&nbsp;';
+      }
+    }
+    return;
+  }
+
+  if (evt.event === 'status') {
+    if (lab && typeof evt.message === 'string') lab.textContent = evt.message;
+    if (fill) fill.classList.add('indeterminate');
+    if (pct) pct.textContent = '…';
+    if (meta) meta.innerHTML = '&nbsp;';
+    if (track) track.removeAttribute('aria-valuenow');
+  }
+}
+
+// Globaler Listener — aktiv waehrend das Panel sichtbar ist.
+if (fh && typeof fh.onInstallProgress === 'function') {
+  fh.onInstallProgress((evt) => applyProgressEvent(evt));
+}
+
 async function openSettings() {
   await fillSettings();
   $('settings-overlay').hidden = false;
@@ -196,21 +324,44 @@ document.addEventListener('DOMContentLoaded', async () => {
     const btn = $('btn-update');
     const lab = $('btn-update-label');
     if (btn.disabled) return;
+
+    // Ohne Discord-Login bringt Aktualisieren nichts — Python blockt sowieso.
+    // Frueh abfangen, damit das Panel nicht kurz aufblitzt.
+    const session = await fh.discordSession();
+    if (!session || !session.displayName) {
+      showToast('Du musst dich zuerst mit Discord anmelden, damit dir ein Charakter-Slot zugewiesen werden kann.', 8000);
+      const loginBtn = $('btn-discord-login');
+      if (loginBtn) loginBtn.classList.add('highlight-pulse');
+      setTimeout(() => { if (loginBtn) loginBtn.classList.remove('highlight-pulse'); }, 3000);
+      return;
+    }
+
     lab.textContent = 'Installiere…';
     btn.disabled = true;
-    showToast('Lade fehlende Dateien — das kann einige Minuten dauern…', 12000);
+    resetProgressUi();
+    showProgressPanel();
     try {
       const r = await fh.setup();
       if (r && r.ok) {
         showToast(r.message || 'Installation abgeschlossen.', 6000);
+        hideProgressPanel(1200);
+      } else if (r && r.error === 'login_required') {
+        showToast(r.message || 'Bitte zuerst mit Discord anmelden.', 8000);
+        hideProgressPanel(0);
+        const loginBtn = $('btn-discord-login');
+        if (loginBtn) loginBtn.classList.add('highlight-pulse');
+        setTimeout(() => { if (loginBtn) loginBtn.classList.remove('highlight-pulse'); }, 3000);
       } else {
         const msg = (r && r.message) || (r && r.error) || JSON.stringify(r);
         showToast(`Fehler: ${msg}`, 8000);
+        hideProgressPanel(0);
       }
     } catch (e) {
       showToast(`Fehler: ${e}`, 8000);
+      hideProgressPanel(0);
     } finally {
       lab.textContent = 'Aktualisieren';
+      btn.disabled = false;
       await refreshLauncherState();
     }
   });
@@ -275,17 +426,34 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     btn.disabled = true;
     showToast('Starte FrostholdRP…', 2000);
+    resetProgressUi();
+    // Play kann im Hintergrund ein Client-Update ausloesen (Remote-Fingerprint
+    // hat sich geaendert). Der globale onInstallProgress-Listener zeigt das
+    // Panel automatisch, sobald Events reinkommen.
     try {
       const r = await fh.play();
       if (r && r.ok) {
         showToast('Skyrim wird mit SKSE gestartet. Du kannst den Launcher schließen.', 6000);
+        hideProgressPanel(1200);
+      } else if (r && r.error === 'login_required') {
+        // Session im Chat-Server nicht mehr gueltig (Server-Neustart o. ae.)
+        // -> User soll sich per Discord neu anmelden.
+        showToast(r.message || 'Bitte erneut mit Discord anmelden.', 8000);
+        hideProgressPanel(0);
+        await fh.discordLogout();
+        await refreshDiscordUI();
+        const loginBtn = $('btn-discord-login');
+        if (loginBtn) loginBtn.classList.add('highlight-pulse');
+        setTimeout(() => { if (loginBtn) loginBtn.classList.remove('highlight-pulse'); }, 3000);
       } else {
         const msg = (r && r.message) || (r && r.error) || JSON.stringify(r);
         showToast(`Fehler: ${msg}`, 8000);
+        hideProgressPanel(0);
         await refreshLauncherState();
       }
     } catch (e) {
       showToast(`Fehler: ${e}`, 8000);
+      hideProgressPanel(0);
     } finally {
       btn.disabled = false;
     }

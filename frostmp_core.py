@@ -10,6 +10,7 @@ import os
 import re
 import sys
 import subprocess
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import urllib.request
@@ -18,6 +19,76 @@ import zipfile
 import shutil
 import tempfile
 import threading
+
+# ============================================================================
+# Progress-Events fuer den Electron-Launcher.
+#
+# Python streamt line-delimited JSON zu stdout. Electron liest stdout
+# zeilenweise und leitet "event":"progress" | "status" an den Renderer
+# weiter (-> Fortschrittsbalken). Die LETZTE JSON-Zeile ohne "event"-Feld
+# ist das Endresultat (wie bisher).
+#
+# Wir schreiben bewusst auf stdout (nicht stderr), damit Electron nur EINEN
+# Stream parsen muss und Formate kompatibel bleiben.
+# ============================================================================
+
+def _emit_event(event_type: str, **kwargs: Any) -> None:
+    try:
+        data: Dict[str, Any] = {"event": event_type}
+        data.update(kwargs)
+        sys.stdout.write(json.dumps(data, ensure_ascii=False) + "\n")
+        sys.stdout.flush()
+    except Exception:
+        # Progress darf unter KEINEN Umstaenden die Installation abschiessen.
+        pass
+
+
+def _make_progress_emitter(phase: str, label: str, throttle_ms: int = 120):
+    """
+    Erzeugt eine `progress_cb(done, total)` Funktion, die JSON-Events mit
+    Phase, Label, Bytes und Prozentwert an den Launcher schickt.
+
+    Throttling: max. ein Update alle `throttle_ms`, ausser das finale
+    (done >= total) — das geht immer durch, damit der Balken sauber 100 %
+    erreicht und auf die naechste Phase wechseln kann.
+    """
+    state: Dict[str, Any] = {"t": 0.0, "done": -1, "total": -1, "sent_zero": False}
+
+    def emit(done: int, total: int) -> None:
+        now = time.monotonic() * 1000.0
+        is_last = total > 0 and done >= total
+        if not state["sent_zero"]:
+            state["sent_zero"] = True
+        elif not is_last and state["t"] and (now - state["t"]) < throttle_ms:
+            return
+        if done == state["done"] and total == state["total"] and not is_last:
+            return
+        state["t"] = now
+        state["done"] = done
+        state["total"] = total
+        percent: Optional[float] = None
+        if total > 0:
+            percent = round((done / total) * 100.0, 1)
+        _emit_event(
+            "progress",
+            phase=phase,
+            label=label,
+            bytesDone=int(done),
+            bytesTotal=int(total),
+            percent=percent,
+        )
+
+    return emit
+
+
+def _emit_status(phase: str, message: str) -> None:
+    _emit_event("status", phase=phase, message=message)
+
+
+def _make_status_emitter(phase: str):
+    def cb(message: str) -> None:
+        _emit_status(phase, message)
+    return cb
 
 # ============================================================================
 # Configuration - adjust these URLs/versions as needed
@@ -545,8 +616,16 @@ def install_client_dist_from_folder(
 def install_client_dist_from_url(
     skyrim_dir: Path, url: str,
     progress_cb=None, status_cb=None,
+    extract_progress_cb=None,
 ) -> bool:
-    """Download a client dist zip from URL and install it."""
+    """
+    Download a client dist zip from URL and install it.
+
+    progress_cb           -> Download-Fortschritt (bytes_done, bytes_total).
+    extract_progress_cb   -> Entpack-Fortschritt (files_done, files_total).
+                             Fallback auf progress_cb, wenn nicht gesetzt (legacy).
+    status_cb             -> Phasen-Status-Message (str).
+    """
     if status_cb:
         status_cb("Client-Distribution wird heruntergeladen...")
 
@@ -556,7 +635,11 @@ def install_client_dist_from_url(
         download_file(url, zip_path, progress_cb)
         if status_cb:
             status_cb("Client-Dateien werden entpackt...")
-        install_client_dist_from_zip(skyrim_dir, zip_path, progress_cb, status_cb)
+        install_client_dist_from_zip(
+            skyrim_dir, zip_path,
+            extract_progress_cb if extract_progress_cb is not None else progress_cb,
+            status_cb,
+        )
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return True
@@ -732,19 +815,38 @@ YELLOW = "#ffd93d"
 
 
 
-def _install_client_files_sync(skyrim_dir: Path, client_dist_url: str) -> None:
+def _install_client_files_sync(
+    skyrim_dir: Path,
+    client_dist_url: str,
+    download_progress_cb=None,
+    extract_progress_cb=None,
+    status_cb=None,
+) -> None:
     """Install Skyrim Platform / client without GUI (for Electron)."""
     url = client_dist_url.strip()
     if url and (url.startswith("http://") or url.startswith("https://")):
-        install_client_dist_from_url(skyrim_dir, url, progress_cb=None, status_cb=None)
+        install_client_dist_from_url(
+            skyrim_dir, url,
+            progress_cb=download_progress_cb,
+            status_cb=status_cb,
+            extract_progress_cb=extract_progress_cb,
+        )
         return
     if url and Path(url).exists():
         p = Path(url)
         if p.is_file() and p.suffix.lower() == ".zip":
-            install_client_dist_from_zip(skyrim_dir, p, progress_cb=None, status_cb=None)
+            install_client_dist_from_zip(
+                skyrim_dir, p,
+                progress_cb=extract_progress_cb,
+                status_cb=status_cb,
+            )
             return
         if p.is_dir():
-            install_client_dist_from_folder(skyrim_dir, p, progress_cb=None, status_cb=None)
+            install_client_dist_from_folder(
+                skyrim_dir, p,
+                progress_cb=extract_progress_cb,
+                status_cb=status_cb,
+            )
             return
     raise RuntimeError(
         "Keine gueltige Client-Distribution. URL, ZIP oder Ordner in den Einstellungen angeben."
@@ -769,7 +871,16 @@ def _install_missing_components(
 
         if force_once:
             try:
-                _install_client_files_sync(skyrim_dir, client_src)
+                _install_client_files_sync(
+                    skyrim_dir, client_src,
+                    download_progress_cb=_make_progress_emitter(
+                        "client_download", "FrostMP-Client wird heruntergeladen"
+                    ),
+                    extract_progress_cb=_make_progress_emitter(
+                        "client_extract", "FrostMP-Client wird entpackt"
+                    ),
+                    status_cb=_make_status_emitter("client"),
+                )
                 new_fp = http_head_fingerprint(client_src) or remote_fp
                 patch: Dict[str, Any] = {"client_force_update_once": False}
                 if new_fp:
@@ -781,7 +892,16 @@ def _install_missing_components(
 
         if remote_fp and stored_fp and remote_fp != stored_fp:
             try:
-                _install_client_files_sync(skyrim_dir, client_src)
+                _install_client_files_sync(
+                    skyrim_dir, client_src,
+                    download_progress_cb=_make_progress_emitter(
+                        "client_download", "Update: FrostMP-Client wird heruntergeladen"
+                    ),
+                    extract_progress_cb=_make_progress_emitter(
+                        "client_extract", "Update: FrostMP-Client wird entpackt"
+                    ),
+                    status_cb=_make_status_emitter("client"),
+                )
                 new_fp = http_head_fingerprint(client_src) or remote_fp
                 if new_fp:
                     save_config({"client_dist_remote_fp": new_fp})
@@ -813,11 +933,25 @@ def _install_missing_components(
 
     try:
         if needs_vcredist:
+            _emit_status("vcredist", "Visual C++ 2015-2022 Redistributable wird installiert...")
             install_vc_redist()
         if needs_skse:
-            install_skse(skyrim_dir, progress_cb=None, status_cb=None)
+            install_skse(
+                skyrim_dir,
+                progress_cb=_make_progress_emitter("skse_download", "SKSE wird heruntergeladen"),
+                status_cb=_make_status_emitter("skse"),
+            )
         if needs_client:
-            _install_client_files_sync(skyrim_dir, client_src)
+            _install_client_files_sync(
+                skyrim_dir, client_src,
+                download_progress_cb=_make_progress_emitter(
+                    "client_download", "FrostMP-Client wird heruntergeladen"
+                ),
+                extract_progress_cb=_make_progress_emitter(
+                    "client_extract", "FrostMP-Client wird entpackt"
+                ),
+                status_cb=_make_status_emitter("client"),
+            )
             if _is_http_url(client_src):
                 new_fp = http_head_fingerprint(client_src)
                 if new_fp:
@@ -877,12 +1011,23 @@ def ensure_components_install_headless() -> dict:
         port = int(cfg.get("server_port", DEFAULT_PORT))
     except (TypeError, ValueError):
         port = DEFAULT_PORT
+    # profile_id kommt ausschliesslich aus dem Discord-OAuth-Flow (Chat-Server).
+    # Fehlt er oder ist <1, blockieren wir jede Aktion und verweisen den User auf
+    # den Discord-Login-Button im Launcher.
     try:
-        profile_id = int(cfg.get("profile_id", 1))
-        if profile_id < 1:
-            raise ValueError
+        profile_id = int(cfg.get("profile_id", 0))
     except (TypeError, ValueError):
-        profile_id = 1
+        profile_id = 0
+    if profile_id < 1:
+        return {
+            "ok": False,
+            "error": "login_required",
+            "message": (
+                "Bitte erst mit Discord anmelden. Ohne Login bekommst du keinen"
+                " eigenen Charakter-Slot und kannst nicht spielen."
+            ),
+            "ready_to_play": False,
+        }
 
     skyrim_dir = resolve_skyrim_dir(cfg)
     if skyrim_dir is None:
@@ -946,12 +1091,22 @@ def ensure_components_and_launch_headless() -> dict:
         port = int(cfg.get("server_port", DEFAULT_PORT))
     except (TypeError, ValueError):
         port = DEFAULT_PORT
+    # profile_id kommt ausschliesslich aus dem Discord-OAuth-Flow (Chat-Server).
+    # Fehlt er oder ist <1, blockieren wir den Spielstart -> User muss erst
+    # ueber den Discord-Login-Button im Launcher authentifizieren.
     try:
-        profile_id = int(cfg.get("profile_id", 1))
-        if profile_id < 1:
-            raise ValueError
+        profile_id = int(cfg.get("profile_id", 0))
     except (TypeError, ValueError):
-        profile_id = 1
+        profile_id = 0
+    if profile_id < 1:
+        return {
+            "ok": False,
+            "error": "login_required",
+            "message": (
+                "Bitte erst mit Discord anmelden. Ohne Login bekommst du keinen"
+                " eigenen Charakter-Slot und kannst nicht spielen."
+            ),
+        }
 
     skyrim_dir = resolve_skyrim_dir(cfg)
     if skyrim_dir is None:

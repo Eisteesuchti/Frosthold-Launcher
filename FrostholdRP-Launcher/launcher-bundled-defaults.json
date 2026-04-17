@@ -1,11 +1,11 @@
 {
-  "_info": "client_dist_source: oeffentliche Client-ZIP-URL. Chat: frosthold_chat_enabled true + frosthold_chat_ws_url (ws://HOST:3210) + user_id/secret wie chat-server config.json — sonst kein Ingame-Chat.",
+  "_info": "Mitgelieferte Default-Werte fuer neue Installationen. Keine Chat-Credentials hardcoden — jeder User meldet sich per Discord-OAuth an und bekommt dadurch sessionToken + deterministischen profile_id vom Chat-Server.",
   "server_ip": "188.245.77.170",
   "status_url": "http://188.245.77.170:3212/health",
   "client_dist_source": "http://188.245.77.170:3212/client-dist.zip",
   "launcher_update_feed_url": "",
   "frosthold_chat_enabled": true,
   "frosthold_chat_ws_url": "ws://188.245.77.170:3211",
-  "frosthold_chat_user_id": "player1",
-  "frosthold_chat_secret": "changeme-secret-1"
+  "frosthold_chat_user_id": "",
+  "frosthold_chat_secret": ""
 }

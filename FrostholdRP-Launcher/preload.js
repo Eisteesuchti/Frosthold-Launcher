@@ -20,4 +20,20 @@ contextBridge.exposeInMainWorld('fh', {
   discordLogin: () => ipcRenderer.invoke('discord-login'),
   discordLogout: () => ipcRenderer.invoke('discord-logout'),
   discordSession: () => ipcRenderer.invoke('discord-session'),
+
+  /**
+   * Abo fuer Live-Install-Progress-Events vom Python-Backend.
+   * @param {(evt: { event: 'progress' | 'status', phase: string, label?: string,
+   *                 message?: string, percent?: number|null,
+   *                 bytesDone?: number, bytesTotal?: number }) => void} cb
+   * @returns {() => void} Unsubscribe-Funktion.
+   */
+  onInstallProgress: (cb) => {
+    if (typeof cb !== 'function') return () => {};
+    const handler = (_evt, data) => {
+      try { cb(data); } catch (_) {}
+    };
+    ipcRenderer.on('install-progress', handler);
+    return () => ipcRenderer.removeListener('install-progress', handler);
+  },
 });
