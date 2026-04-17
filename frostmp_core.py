@@ -55,6 +55,16 @@ LEGACY_CLIENT_SETTINGS = "Data/Platform/Plugins/skymp5-client-settings.txt"
 # We accept any versionlib-*.bin under Data/SKSE/Plugins (checked separately).
 ADDRESS_LIB_GLOB = "versionlib-*.bin"
 
+# Microsoft Visual C++ 2015-2022 Redistributable (x64). Skyrim Platform und
+# MpClientPlugin brauchen VCRUNTIME140.dll, VCRUNTIME140_1.dll, MSVCP140.dll —
+# auf frischen Windows-Installationen fehlen die oft und Skyrim crasht via
+# skse64_loader.exe noch vor dem Hauptmenue, obwohl Vanilla-Skyrim startet.
+VCREDIST_DLLS = (
+    "VCRUNTIME140.dll",
+    "VCRUNTIME140_1.dll",
+    "MSVCP140.dll",
+)
+
 
 def has_address_library(skyrim_dir: Path) -> bool:
     plug = skyrim_dir / "Data" / "SKSE" / "Plugins"
@@ -63,6 +73,41 @@ def has_address_library(skyrim_dir: Path) -> bool:
     for p in plug.glob("versionlib-*.bin"):
         if p.is_file():
             return True
+    return False
+
+
+def has_vc_redist() -> bool:
+    """True, wenn Microsoft VC++ 2015-2022 Redistributable (x64) installiert ist.
+
+    Strategie 1: Registry-Key, den der vc_redist.x64.exe nach Install setzt.
+    Strategie 2: Pruefe, ob die drei DLLs in System32 existieren.
+    """
+    # Strategie 1 — Registry.
+    try:
+        import winreg
+        subkeys = (
+            r"SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64",
+            r"SOFTWARE\WOW6432Node\Microsoft\VisualStudio\14.0\VC\Runtimes\x64",
+        )
+        for sub in subkeys:
+            try:
+                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, sub)
+                try:
+                    val, _ = winreg.QueryValueEx(key, "Installed")
+                    if int(val) == 1:
+                        return True
+                finally:
+                    winreg.CloseKey(key)
+            except FileNotFoundError:
+                continue
+    except ImportError:
+        pass
+
+    # Strategie 2 — DLL-Existenz als Fallback (z. B. wenn Registry-Schluessel fehlt).
+    system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
+    system32 = system_root / "System32"
+    if all((system32 / dll).is_file() for dll in VCREDIST_DLLS):
+        return True
     return False
 
 # ============================================================================
@@ -156,11 +201,18 @@ def check_all_components(skyrim_dir: Path) -> List[ComponentStatus]:
         addr_ok,
         [] if addr_ok else [f"Data/SKSE/Plugins/{ADDRESS_LIB_GLOB} (fehlt)"],
     )
+    vcr_ok = has_vc_redist()
+    vcr = ComponentStatus(
+        "VC++ Redistributable",
+        vcr_ok,
+        [] if vcr_ok else ["Microsoft Visual C++ 2015-2022 Redistributable (x64) fehlt"],
+    )
     return [
         check_component(skyrim_dir, "SKSE64", SKSE_MARKERS),
         check_component(skyrim_dir, "Skyrim Platform", SP_MARKERS),
         check_component(skyrim_dir, "FrostMP Client", CLIENT_MARKERS),
         addr,
+        vcr,
     ]
 
 
@@ -317,6 +369,59 @@ def extract_7z(archive: Path, dest: Path) -> bool:
 # ============================================================================
 # Installation routines
 # ============================================================================
+
+def _find_bundled_vcredist() -> Optional[Path]:
+    """Sucht den gebundelten vc_redist.x64.exe, den der Electron-Launcher beim
+    Spawn als FROSTMP_BUNDLED_VCREDIST bereitstellt. Fallback: relativ zur .py."""
+    env_path = os.environ.get("FROSTMP_BUNDLED_VCREDIST")
+    here = Path(__file__).resolve().parent
+    candidates: List[Path] = []
+    if env_path:
+        candidates.append(Path(env_path))
+    candidates.extend([
+        here / "bin" / "vc_redist.x64.exe",
+        here.parent / "bin" / "vc_redist.x64.exe",
+        here / "FrostholdRP-Launcher" / "bin" / "vc_redist.x64.exe",
+    ])
+    for p in candidates:
+        if p.is_file():
+            return p
+    return None
+
+
+def install_vc_redist() -> bool:
+    """Installiert Microsoft Visual C++ 2015-2022 Redistributable (x64).
+    Loest ggf. einen UAC-Prompt aus (Windows verlangt Elevation fuer
+    System-DLLs). Wenn schon installiert -> No-Op (Exit-Code 1638).
+    """
+    if has_vc_redist():
+        return True
+    installer = _find_bundled_vcredist()
+    if installer is None:
+        raise RuntimeError(
+            "vc_redist.x64.exe nicht gefunden. Erwartet in bin/vc_redist.x64.exe "
+            "im Launcher-Ordner. Launcher bitte neu installieren oder VC++ "
+            "Redistributable manuell von https://aka.ms/vs/17/release/vc_redist.x64.exe "
+            "installieren."
+        )
+    # /install /quiet /norestart ist der offizielle Silent-Mode.
+    # Exit-Codes:  0 = OK, 1638 = bereits neuere Version da, 3010 = OK + Reboot noetig.
+    try:
+        proc = subprocess.run(
+            [str(installer), "/install", "/quiet", "/norestart"],
+            capture_output=True,
+        )
+    except FileNotFoundError as e:
+        raise RuntimeError(f"VC++ Redistributable-Installer nicht startbar: {e}")
+    rc = proc.returncode
+    if rc in (0, 1638, 3010):
+        return True
+    stderr_tail = (proc.stderr or b"")[-400:].decode("utf-8", errors="replace")
+    raise RuntimeError(
+        f"VC++ Redistributable-Installation fehlgeschlagen (Exit {rc}). "
+        f"Details: {stderr_tail or 'keine Ausgabe'}"
+    )
+
 
 def install_skse(skyrim_dir: Path, progress_cb=None, status_cb=None) -> bool:
     """Download and install SKSE64 into the Skyrim directory."""
@@ -699,6 +804,7 @@ def _install_missing_components(
         and not c.installed
         for c in missing
     )
+    needs_vcredist = any(c.name == "VC++ Redistributable" and not c.installed for c in missing)
     if needs_client and not client_src:
         return False, "client_dist_required", (
             "Keine Client-Download-Quelle. Lege frosthold-client-dist.url (eine Zeile URL) "
@@ -706,6 +812,8 @@ def _install_missing_components(
         )
 
     try:
+        if needs_vcredist:
+            install_vc_redist()
         if needs_skse:
             install_skse(skyrim_dir, progress_cb=None, status_cb=None)
         if needs_client:

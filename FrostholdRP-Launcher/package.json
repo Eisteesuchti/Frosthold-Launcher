@@ -1,6 +1,6 @@
 {
   "name": "frostholdrp-launcher",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "FrostholdRP Skyrim Multiplayer Launcher",
   "author": "FrostholdRP",
   "main": "main.js",
@@ -9,12 +9,14 @@
     "clean:dist": "node scripts/clean-dist.mjs",
     "prepare-runtime": "node scripts/prepare-python-runtime.mjs",
     "prepare-7zr": "node scripts/prepare-7zr.mjs",
-    "pack": "npm run clean:dist && npm run prepare-runtime && npm run prepare-7zr && electron-builder --win portable --x64",
-    "installer": "npm run clean:dist && npm run prepare-runtime && npm run prepare-7zr && electron-builder --win nsis --x64",
-    "dist": "npm run clean:dist && npm run prepare-runtime && npm run prepare-7zr && electron-builder --win nsis portable --x64",
-    "dist:installer": "npm run clean:dist && npm run prepare-runtime && npm run prepare-7zr && electron-builder --win nsis --x64",
-    "dist:portable": "npm run clean:dist && npm run prepare-runtime && npm run prepare-7zr && electron-builder --win portable --x64",
-    "dist:publish": "npm run clean:dist && npm run prepare-runtime && npm run prepare-7zr && electron-builder --win nsis --x64 --publish always",
+    "prepare-vcredist": "node scripts/prepare-vcredist.mjs",
+    "prepare-all": "npm run prepare-runtime && npm run prepare-7zr && npm run prepare-vcredist",
+    "pack": "npm run clean:dist && npm run prepare-all && electron-builder --win portable --x64",
+    "installer": "npm run clean:dist && npm run prepare-all && electron-builder --win nsis --x64",
+    "dist": "npm run clean:dist && npm run prepare-all && electron-builder --win nsis portable --x64",
+    "dist:installer": "npm run clean:dist && npm run prepare-all && electron-builder --win nsis --x64",
+    "dist:portable": "npm run clean:dist && npm run prepare-all && electron-builder --win portable --x64",
+    "dist:publish": "npm run clean:dist && npm run prepare-all && electron-builder --win nsis --x64 --publish always",
     "release": "node scripts/release-launcher.mjs"
   },
   "devDependencies": {

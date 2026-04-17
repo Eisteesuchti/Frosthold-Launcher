@@ -203,6 +203,23 @@ function getBundled7zrExe() {
   return null;
 }
 
+/** Mitgeliefertes VC++ 2015-2022 Redistributable (x64) — wird vom Python-Core
+ *  ausgefuehrt, wenn das Redist auf dem System fehlt (Skyrim crasht sonst via
+ *  skse64_loader.exe vor dem Hauptmenue, weil Skyrim Platform seine DLLs nicht
+ *  laden kann). */
+function getBundledVcRedistExe() {
+  if (process.platform !== 'win32') return null;
+  const candidates = [];
+  if (app.isPackaged) {
+    candidates.push(path.join(process.resourcesPath, 'bin', 'vc_redist.x64.exe'));
+  }
+  candidates.push(path.join(__dirname, 'bin', 'vc_redist.x64.exe'));
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
 function runPythonJson(args) {
   return new Promise((resolve, reject) => {
     const script = getPythonScriptPath();
@@ -214,6 +231,10 @@ function runPythonJson(args) {
     const bundled7zr = getBundled7zrExe();
     if (bundled7zr) {
       env.FROSTMP_BUNDLED_7ZR = bundled7zr;
+    }
+    const bundledVcRedist = getBundledVcRedistExe();
+    if (bundledVcRedist) {
+      env.FROSTMP_BUNDLED_VCREDIST = bundledVcRedist;
     }
     const opts = {
       cwd: path.dirname(script),
