@@ -22,6 +22,20 @@
 
 Kein Fraktionskrieg um Punkte, keine PvP-Arena als Hauptgericht — **immersives Rollenspiel** steht im Mittelpunkt. Handwerk, Zünfte, Intrigen zwischen den Großen Häusern, Nachtlager an Feuerstellen, an denen ihr euch die Geschichten wirklich erzählt.
 
+---
+
+> ## ⚠️ Alpha-Stadium — bitte zuerst lesen
+>
+> **FrostholdRP steckt aktuell in einer sehr frühen Alpha.** Es gibt **noch keine Spielinhalte** im klassischen Sinne: keine Quests, keine NPCs mit Leben, keine funktionierenden Gilden, kein ausbalanciertes Wirtschaftssystem. Wer sich einloggt, landet in einer **im Kern leeren Welt** — Himmelsrand steht da, aber es wartet niemand auf dich.
+>
+> **Was du erwarten darfst:** Grundgerüst, Charaktererstellung, dich mit Freunden sehen und bewegen, erste Feature-Tests.
+>
+> **Was du nicht erwarten darfst:** stabile Sessions, fertiges Gameplay, Bugfreiheit, persistente Welt. Saves können zurückgesetzt, Mechaniken umgebaut und Server ohne Vorwarnung neu gestartet werden.
+>
+> Das Projekt wird **stetig und aktiv weiterentwickelt** — wer jetzt einsteigt, schaut eher beim Bauen zu, als dass er fertiges Spiel konsumiert. Wenn du trotzdem Lust hast, einen Blick zu riskieren und Feedback beizusteuern: herzlich willkommen. Wenn du auf "Server betreten und direkt Rollenspiel" hoffst, komm in ein paar Monaten wieder.
+
+---
+
 ## Was macht dieser Launcher?
 
 Der **FrostholdRP Launcher** ist dein Eintrittspunkt. Er nimmt dir das ganze technische Drumherum ab, damit du direkt ins Spiel kommst:
