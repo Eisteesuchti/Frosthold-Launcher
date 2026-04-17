@@ -1,30 +1,54 @@
-# Frosthold Server & Launcher
+<p align="center">
+  <img src="FrostholdRP-Launcher/assets/logo.png" alt="FrostholdRP" width="128" height="128" />
+</p>
 
-**Launcher-Repository (dieses Repo):** [Frosthold-Launcher](https://github.com/Eisteesuchti/Frosthold-Launcher)
+<h1 align="center">FrostholdRP Launcher</h1>
 
-**Chat & MP-Stack:** [Frosthold-Server](https://github.com/Eisteesuchti/Frosthold-Server) — dort liegt `chat-server/` (Node-WebSocket-Chat mit Discord-OAuth).
+<p align="center">
+  <em>Erkunde Himmelsrand. Gemeinsam.</em>
+</p>
 
-Dieses Repository enthält unter anderem:
+<p align="center">
+  <a href="https://github.com/Eisteesuchti/Frosthold-Launcher/releases/latest">
+    <img alt="Latest Release" src="https://img.shields.io/github/v/release/Eisteesuchti/Frosthold-Launcher?style=for-the-badge&label=Download&color=3a6ea5" />
+  </a>
+</p>
 
-- **`FrostholdRP-Launcher/`** — Electron-Launcher (NSIS/Portable, gebündelte Python-Runtime)
-- **`FrostMP-Launcher.py`**, **`frostmp_core.py`**, **`frostmp_gui.py`** — Steuerung/Download-Logik für den Launcher
+---
 
-Das Skyrim-Multiplayer-Setup baut auf **SkyMP** auf ([Repository](https://github.com/skyrim-multiplayer/skymp)); FrostholdRP pflegt Launcher und Konfiguration separat.
+## Was ist FrostholdRP?
 
-## Chat-Server (nur noch Repo Frosthold-Server)
+**FrostholdRP** ist eine deutschsprachige Rollenspiel-Community in **The Elder Scrolls V: Skyrim Special Edition** — nur eben **nicht allein**. Statt sich durch Himmelsrand zu einzelspielern, läufst du denselben Drachen wie deine Freunde entgegen, handelst mit Fremden am Stadttor von Weißlauf und erlebst deine eigene Geschichte in einer Welt, die gerade weiterlebt, während du offline bist.
 
-**Lokal bleibt alles wie bei dir:** Workspace `…\Frosthold Server\` mit **`FrostholdRP-Launcher/`**, **`Frosthold/`** und **`chat-server/`** — du arbeitest weiter genau in diesem Ordner.
+Kein Fraktionskrieg um Punkte, keine PvP-Arena als Hauptgericht — **immersives Rollenspiel** steht im Mittelpunkt. Handwerk, Zünfte, Intrigen zwischen den Großen Häusern, Nachtlager an Feuerstellen, an denen ihr euch die Geschichten wirklich erzählt.
 
-**Nur die Git-Zuordnung:** Änderungen am Chat sollen **nicht** ins Repo **Frosthold-Launcher** (dieses Repo), sondern ins **[Frosthold-Server](https://github.com/Eisteesuchti/Frosthold-Server)**. Dafür ist `chat-server/` hier per **`.gitignore`** vom Launcher-Repo ausgeschlossen — der Launcher „sieht“ den Chat-Ordner beim Commit nicht.
+## Was macht dieser Launcher?
 
-**Empfohlen (ein Pfad, richtiges Remote):** **`Frosthold-Server`** einmal klonen (z. B. `…\Programmieren Ordner\Frosthold-Server\`), dann unter Windows die **Junction** legen, damit `…\Frosthold Server\chat-server` physisch derselbe Ordner wie `…\Frosthold-Server\chat-server` ist:
+Der **FrostholdRP Launcher** ist dein Eintrittspunkt. Er nimmt dir das ganze technische Drumherum ab, damit du direkt ins Spiel kommst:
 
-1. `config.json` (und ggf. `node_modules`) aus dem alten `chat-server` sichern.
-2. Den bisherigen Ordner `Frosthold Server\chat-server` löschen (nur wenn leer/ersetzbar).
-3. Als Administrator in **cmd**:  
-   `mklink /J "C:\Users\Danie\Desktop\Programmieren Ordner\Frosthold Server\chat-server" "C:\Users\Danie\Desktop\Programmieren Ordner\Frosthold-Server\chat-server"`  
-   (Zielpfad anpassen, wo dein **Frosthold-Server**-Klon liegt.)
+- **Ein-Klick-Installation** aller nötigen Komponenten für den Multiplayer-Modus
+- **Automatische Updates** des Clients — Balance-Änderungen und neue Features bekommst du ohne Handarbeit
+- **Integritäts-Checks** vor jedem Start, damit korrupte Dateien nicht zur Session-Killer werden
+- **Saubere Deinstallation** — wenn du pausieren willst, bleibt dein Singleplayer-Skyrim unberührt
+- **Schlankes UI** im Skyrim-Stil, mit Statusanzeige, News und Discord-Anbindung
 
-Danach öffnest du in Cursor weiterhin `…\Frosthold Server\chat-server\…` — `git pull` / `git push` im Terminal **aus diesem Ordner** nutzen den aufgelösten Pfad und landen im **Frosthold-Server**-Repository.
+Der Launcher ist eine Electron-App für **Windows (x64)**, NSIS-Installer oder Portable-Variante — wie du willst.
 
-**Auf dem Hetzner:** im Klon von **Frosthold-Server** `git pull`, Chat neu starten (`pm2 restart …`), falls der Prozess noch auf einen alten Pfad zeigt.
+## So kommst du rein
+
+1. **Skyrim Special Edition** via Steam besitzen und einmal gestartet haben  
+2. Den [aktuellen Installer](https://github.com/Eisteesuchti/Frosthold-Launcher/releases/latest) herunterladen und ausführen  
+3. **„Aktualisieren"** → **„Spielen"** — fertig.
+
+Alles Weitere — Client-Dateien, SKSE, Konfiguration — erledigt der Launcher im Hintergrund.
+
+## Mitmachen
+
+Schau auf unserem Discord vorbei, wenn du Lust auf konsequentes Rollenspiel in einer lebendigen Community hast.  
+*(Einladungslink kommt bald — aktuell sind wir in geschlossener Beta.)*
+
+## Lizenz & Credits
+
+Das Skyrim-Multiplayer-Fundament basiert auf dem Open-Source-Projekt **[SkyMP](https://github.com/skyrim-multiplayer/skymp)**. Dieser Launcher ist eine unabhängige, nicht-kommerzielle Distribution.
+
+**The Elder Scrolls V: Skyrim** ist ein eingetragenes Markenzeichen von Bethesda Softworks LLC. FrostholdRP steht in keiner Verbindung zu Bethesda Softworks, ZeniMax Media oder deren Tochterunternehmen.
