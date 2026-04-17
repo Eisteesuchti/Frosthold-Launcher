@@ -26,7 +26,7 @@ Kein Fraktionskrieg um Punkte, keine PvP-Arena als Hauptgericht — **immersives
 
 > ## ⚠️ Alpha-Stadium — bitte zuerst lesen
 >
-> **FrostholdRP steckt aktuell in einer sehr frühen Alpha.** Es gibt **noch keine Spielinhalte** im klassischen Sinne: keine Quests, keine NPCs mit Leben, keine funktionierenden Gilden, kein ausbalanciertes Wirtschaftssystem. Wer sich einloggt, landet in einer **im Kern leeren Welt** — Himmelsrand steht da, aber es wartet niemand auf dich.
+> **FrostholdRP steckt aktuell in einer sehr frühen Alpha.** Es gibt **noch keine Spielinhalte** im klassischen Sinne: keine Quests, keine funktionierenden Gilden, kein ausbalanciertes Wirtschaftssystem. Wer sich einloggt, landet in einer **im Kern leeren Welt** — Himmelsrand steht da, aber es wartet niemand auf dich.
 >
 > **Was du erwarten darfst:** Grundgerüst, Charaktererstellung, dich mit Freunden sehen und bewegen, erste Feature-Tests.
 >
