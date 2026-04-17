@@ -902,8 +902,17 @@ async function refreshSessionFromChatServer(sessionToken) {
           resolve({ status: 'invalid' });
           return;
         }
-        if (res.statusCode === 404 || res.statusCode === 401 || res.statusCode === 400) {
+        // 401/400 = Server kennt den Endpoint und hat den Token explizit abgelehnt.
+        if (res.statusCode === 401 || res.statusCode === 400) {
           resolve({ status: 'invalid' });
+          return;
+        }
+        // 404 behandeln wir bewusst als "unreachable": das ist in der Praxis ein
+        // Hinweis auf einen legacy Chat-Server ohne /auth/session-Endpoint.
+        // Hier die Session zu loeschen waere destruktiv — wir fallen stattdessen
+        // auf die lokal in discord-session.json verifizierte profileId zurueck.
+        if (res.statusCode === 404) {
+          resolve({ status: 'unreachable', reason: 'endpoint_not_found' });
           return;
         }
         resolve({ status: 'unreachable' });
@@ -965,24 +974,40 @@ ipcMain.handle('discord-login', async () => {
     const code = await callbackPromise;
     const session = await exchangeCodeWithChatServer(code);
 
-    saveDiscordSession(session);
+    // Alter Chat-Server (vor Launcher 0.2.5) liefert KEINE profileId zurueck.
+    // Ohne profileId kann der Launcher keinen eindeutigen Charakter-Slot
+    // zuweisen — dann DÜRFEN wir die Session nicht speichern, sonst landen
+    // alle Spieler wieder auf profile_id=1 (Char-Hijack).
+    const hasProfileId = typeof session.profileId === 'number'
+      && Number.isFinite(session.profileId)
+      && session.profileId >= 1;
+
+    if (!hasProfileId) {
+      return {
+        ok: false,
+        error: 'chat_server_outdated',
+        message: (
+          'Der FrostholdRP-Chat-Server lauft noch in einer aelteren Version und '
+          + 'vergibt noch keine eindeutige Charakter-ID. Der Admin muss den Server '
+          + 'zuerst aktualisieren (Deploy von chat-server/server.mjs). Bis dahin '
+          + 'kannst du dich nicht anmelden.'
+        ),
+      };
+    }
+
+    const pid = Math.floor(session.profileId);
+    const sessionToStore = { ...session, profileId: pid };
+    saveDiscordSession(sessionToStore);
 
     // Update chat credentials in launcher config
     const prev = loadLocalConfig();
     prev.frosthold_chat_enabled = true;
     prev.frosthold_chat_user_id = session.sessionToken;
     prev.frosthold_chat_secret = session.sessionToken;
-    // Der Chat-Server haengt nach erfolgreichem Discord-OAuth ein profileId
-    // in die Response. Das ist der EINZIGE Weg, wie der Launcher einen
-    // gueltigen profile_id in die Client-Settings schreibt. Ohne Discord-Login
-    // bleibt profile_id bei 0 und der Spielstart wird in frostmp_core.py mit
-    // error=login_required geblockt.
-    if (typeof session.profileId === 'number' && Number.isFinite(session.profileId) && session.profileId >= 1) {
-      prev.profile_id = Math.floor(session.profileId);
-    }
+    prev.profile_id = pid;
     saveLocalConfig(prev);
 
-    return { ok: true, ...session };
+    return { ok: true, ...sessionToStore };
   } catch (e) {
     return { ok: false, error: String(e.message || e) };
   }

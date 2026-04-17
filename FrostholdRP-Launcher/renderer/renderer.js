@@ -114,9 +114,15 @@ function formatBytes(n) {
 }
 
 let progressHideTimer = null;
+// Nur wenn true zeigt der Event-Listener das Panel aktiv an. Wird vom
+// "Aktualisieren"-Handler auf true gesetzt, damit Background-Events (z. B. vom
+// Play-Handler, der intern ein automatisches Client-Refresh auslöst) das Panel
+// NICHT ungefragt einblenden.
+let progressPanelActive = false;
 
 function showProgressPanel() {
   if (progressHideTimer) { clearTimeout(progressHideTimer); progressHideTimer = null; }
+  progressPanelActive = true;
   const panel = $('progress-panel');
   if (panel) panel.hidden = false;
 }
@@ -125,14 +131,15 @@ function hideProgressPanel(delayMs = 0) {
   const panel = $('progress-panel');
   if (!panel) return;
   if (progressHideTimer) { clearTimeout(progressHideTimer); progressHideTimer = null; }
-  if (delayMs > 0) {
-    progressHideTimer = setTimeout(() => {
-      panel.hidden = true;
-      resetProgressUi();
-    }, delayMs);
-  } else {
+  const doHide = () => {
+    progressPanelActive = false;
     panel.hidden = true;
     resetProgressUi();
+  };
+  if (delayMs > 0) {
+    progressHideTimer = setTimeout(doHide, delayMs);
+  } else {
+    doHide();
   }
 }
 
@@ -161,7 +168,11 @@ function applyProgressEvent(evt) {
   if (!evt || typeof evt !== 'object') return;
   const panel = $('progress-panel');
   if (!panel) return;
-  showProgressPanel();
+  // WICHTIG: Panel nur anzeigen, wenn der User vorher ein explizites Update
+  // angestossen hat (progressPanelActive=true). Bei reinen Background-
+  // Events (z. B. automatisches Client-Refresh waehrend "Spielen") schreiben
+  // wir den Fortschritt still in die UI, ohne das Panel aufzublenden.
+  if (!progressPanelActive) return;
 
   const lab = $('progress-label');
   const pct = $('progress-percent');
@@ -401,8 +412,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       const r = await fh.discordLogin();
       if (r && r.ok) {
         showToast(`Angemeldet als ${r.displayName}!`, 5000);
+      } else if (r && r.error === 'chat_server_outdated') {
+        showToast(r.message || 'Der FrostholdRP-Chat-Server ist veraltet — bitte warte, bis der Admin ihn aktualisiert hat.', 14000);
       } else {
-        showToast(`Anmeldung fehlgeschlagen: ${r.error || 'Unbekannt'}`, 8000);
+        showToast(`Anmeldung fehlgeschlagen: ${(r && (r.message || r.error)) || 'Unbekannt'}`, 8000);
       }
     } catch (e) {
       showToast(`Fehler: ${e}`, 8000);
@@ -426,20 +439,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     btn.disabled = true;
     showToast('Starte FrostholdRP…', 2000);
-    resetProgressUi();
-    // Play kann im Hintergrund ein Client-Update ausloesen (Remote-Fingerprint
-    // hat sich geaendert). Der globale onInstallProgress-Listener zeigt das
-    // Panel automatisch, sobald Events reinkommen.
+    // Beim "Spielen" zeigen wir das Progress-Panel absichtlich nicht — kein
+    // Update ansteht sichtbar. Falls im Hintergrund doch ein automatisches
+    // Client-Refresh läuft, arbeitet der globale Listener still.
     try {
       const r = await fh.play();
       if (r && r.ok) {
         showToast('Skyrim wird mit SKSE gestartet. Du kannst den Launcher schließen.', 6000);
-        hideProgressPanel(1200);
       } else if (r && r.error === 'login_required') {
         // Session im Chat-Server nicht mehr gueltig (Server-Neustart o. ae.)
         // -> User soll sich per Discord neu anmelden.
         showToast(r.message || 'Bitte erneut mit Discord anmelden.', 8000);
-        hideProgressPanel(0);
         await fh.discordLogout();
         await refreshDiscordUI();
         const loginBtn = $('btn-discord-login');
@@ -448,12 +458,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else {
         const msg = (r && r.message) || (r && r.error) || JSON.stringify(r);
         showToast(`Fehler: ${msg}`, 8000);
-        hideProgressPanel(0);
         await refreshLauncherState();
       }
     } catch (e) {
       showToast(`Fehler: ${e}`, 8000);
-      hideProgressPanel(0);
     } finally {
       btn.disabled = false;
     }
