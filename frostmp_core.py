@@ -44,8 +44,12 @@ SP_MARKERS = [
     "Data/Platform/Distribution/RuntimeDependencies/SkyrimPlatformImpl.dll",
 ]
 CLIENT_MARKERS = [
-    "Data/Platform/Plugins/skymp5-client.js",
+    "Data/Platform/Plugins/frostmp-client.js",
 ]
+# Legacy-Bundle-Name, der frueher (vor dem FrostMP-Branding) verwendet wurde.
+# Der Launcher entfernt ihn beim Update, damit keine zwei Plugins nebeneinander liegen.
+LEGACY_CLIENT_PLUGIN = "Data/Platform/Plugins/skymp5-client.js"
+LEGACY_CLIENT_SETTINGS = "Data/Platform/Plugins/skymp5-client-settings.txt"
 
 # Address Library for CommonLibSSE-NG / SKSE plugins (filename varies with game patch).
 # We accept any versionlib-*.bin under Data/SKSE/Plugins (checked separately).
@@ -348,6 +352,7 @@ def install_client_dist_from_zip(
             if progress_cb:
                 progress_cb(i + 1, total)
 
+    cleanup_legacy_client_files(skyrim_dir)
     return True
 
 
@@ -371,6 +376,7 @@ def install_client_dist_from_folder(
         if progress_cb:
             progress_cb(i + 1, total)
 
+    cleanup_legacy_client_files(skyrim_dir)
     return True
 
 
@@ -485,12 +491,30 @@ def resolve_skyrim_dir(cfg: dict) -> Optional[Path]:
 
 
 def get_settings_path(skyrim_dir: Path) -> Path:
-    return skyrim_dir / "Data" / "Platform" / "Plugins" / "skymp5-client-settings.txt"
+    return skyrim_dir / "Data" / "Platform" / "Plugins" / "frostmp-client-settings.txt"
+
+
+def cleanup_legacy_client_files(skyrim_dir: Path) -> List[str]:
+    """Entfernt alte skymp5-client-* Dateien, falls noch vorhanden.
+
+    Wird beim Update auf das FrostMP-Branding aufgerufen. Gibt eine Liste der
+    geloeschten relativen Pfade zurueck (fuer Logging im Launcher).
+    """
+    removed: List[str] = []
+    for rel in (LEGACY_CLIENT_PLUGIN, LEGACY_CLIENT_SETTINGS):
+        p = skyrim_dir / rel
+        try:
+            if p.is_file():
+                p.unlink()
+                removed.append(rel)
+        except OSError:
+            pass
+    return removed
 
 
 def _frosthold_chat_keys_for_client_settings(cfg: dict) -> Dict[str, Any]:
     """
-    FrostholdChatService (skymp5-client) liest unter sp.settings['skymp5-client']:
+    FrostholdChatService (frostmp-client) liest unter sp.settings['frostmp-client']:
     frosthold-chat-enabled (bool), frosthold-chat-ws-url, frosthold-chat-user-id, frosthold-chat-secret.
     Quelle: frostmp-launcher.json mit Schluesseln frosthold_chat_* (snake_case).
     """
@@ -527,6 +551,7 @@ def write_client_settings(
     path = get_settings_path(skyrim_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+    cleanup_legacy_client_files(skyrim_dir)
     return path
 
 
@@ -747,7 +772,7 @@ def ensure_components_install_headless() -> dict:
 def ensure_components_and_launch_headless() -> dict:
     """
     For Electron: auto-detect Skyrim, install missing SKSE/client if dist URL set,
-    write skymp5-client-settings.txt, start skse64_loader.exe (NOT SkyrimSE.exe).
+    write frostmp-client-settings.txt, start skse64_loader.exe (NOT SkyrimSE.exe).
     Returns a dict suitable for JSON.
     """
     cfg = load_config()
