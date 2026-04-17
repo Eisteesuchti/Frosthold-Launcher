@@ -215,48 +215,102 @@ def http_head_fingerprint(url: str) -> Optional[str]:
 
 # ============================================================================
 # 7z extraction (multi-strategy)
+# ----------------------------------------------------------------------------
+# Wichtig: py7zr unterstuetzt den BCJ2-Filter nicht, der in allen aktuellen
+# SKSE-Archiven von skse.silverlock.org steckt. Deshalb probieren wir zuerst
+# einen externen 7-Zip/7zr-Extractor (bundeln wir mit dem Launcher als
+# bin/7zr.exe mit) und fallen nur im Notfall auf py7zr zurueck — das klappt
+# dann hoechstens fuer non-BCJ2-Archive.
 # ============================================================================
 
+def _run_7z_exe(exe: str, archive: Path, dest: Path) -> bool:
+    """Ruft ein 7-Zip-kompatibles Executable mit Extraktions-Argumenten auf."""
+    try:
+        subprocess.run(
+            [exe, "x", str(archive), f"-o{dest}", "-y"],
+            check=True, capture_output=True,
+        )
+        return True
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return False
+
+
+def _try_bundled_7zr(archive: Path, dest: Path) -> bool:
+    """Mit dem Launcher mitgeliefertes bin/7zr.exe — loest das BCJ2-Problem
+    ohne dass der Spieler irgendwas installieren muss."""
+    env_path = os.environ.get("FROSTMP_BUNDLED_7ZR")
+    candidates: List[str] = []
+    if env_path:
+        candidates.append(env_path)
+    # Fallback: gleicher Pfad relativ zu diesem .py (wenn kein Env gesetzt).
+    here = Path(__file__).resolve().parent
+    candidates.extend([
+        str(here / "bin" / "7zr.exe"),
+        str(here.parent / "bin" / "7zr.exe"),
+        str(here / "FrostholdRP-Launcher" / "bin" / "7zr.exe"),
+    ])
+    for p in candidates:
+        if p and Path(p).is_file() and _run_7z_exe(p, archive, dest):
+            return True
+    return False
+
+
+def _try_installed_7zip(archive: Path, dest: Path) -> bool:
+    """Sucht nach einer lokalen 7-Zip-Installation an Standard-Pfaden, auch
+    wenn 7z.exe nicht auf PATH liegt (7-Zip setzt sich per Default NICHT
+    auf PATH)."""
+    candidates: List[str] = []
+    for env_var in ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"):
+        root = os.environ.get(env_var)
+        if root:
+            candidates.append(os.path.join(root, "7-Zip", "7z.exe"))
+    # Haeufige fest-verdrahtete Pfade als Sicherheitsnetz:
+    candidates.extend([
+        r"C:\Program Files\7-Zip\7z.exe",
+        r"C:\Program Files (x86)\7-Zip\7z.exe",
+    ])
+    # Dedupe, Reihenfolge erhalten.
+    seen: set = set()
+    for p in candidates:
+        if p in seen:
+            continue
+        seen.add(p)
+        if Path(p).is_file() and _run_7z_exe(p, archive, dest):
+            return True
+    return False
+
+
+def _try_subprocess_7z(archive: Path, dest: Path) -> bool:
+    """Letzte Chance via PATH — wenn der User 7-Zip bewusst dort eingetragen hat."""
+    for exe in ("7z", "7za", "7z.exe", "7za.exe", "7zr", "7zr.exe"):
+        if _run_7z_exe(exe, archive, dest):
+            return True
+    return False
+
+
 def _try_py7zr(archive: Path, dest: Path) -> bool:
+    """Notnagel fuer Archive ohne BCJ2-Filter. Schlaegt bei SKSE zuverlaessig fehl."""
     try:
         import py7zr
         with py7zr.SevenZipFile(str(archive), mode="r") as z:
             z.extractall(path=str(dest))
         return True
-    except ImportError:
-        return False
-
-
-def _try_subprocess_7z(archive: Path, dest: Path) -> bool:
-    for exe in ("7z", "7za", "7z.exe", "7za.exe"):
-        try:
-            subprocess.run(
-                [exe, "x", str(archive), f"-o{dest}", "-y"],
-                check=True, capture_output=True,
-            )
-            return True
-        except (FileNotFoundError, subprocess.CalledProcessError):
-            continue
-    return False
-
-
-def _try_install_py7zr_then_extract(archive: Path, dest: Path) -> bool:
-    try:
-        subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--quiet", "py7zr"],
-            check=True, capture_output=True,
-        )
-        return _try_py7zr(archive, dest)
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except Exception:
         return False
 
 
 def extract_7z(archive: Path, dest: Path) -> bool:
-    """Try multiple methods to extract a .7z archive. Returns True on success."""
+    """Try multiple methods to extract a .7z archive. Returns True on success.
+
+    Reihenfolge absichtlich: zuerst externe 7z-Binaries (die BCJ2 koennen),
+    py7zr ganz zum Schluss, weil es BCJ2 nicht unterstuetzt und bei SKSE
+    ohnehin kracht.
+    """
     return (
-        _try_py7zr(archive, dest)
+        _try_bundled_7zr(archive, dest)
+        or _try_installed_7zip(archive, dest)
         or _try_subprocess_7z(archive, dest)
-        or _try_install_py7zr_then_extract(archive, dest)
+        or _try_py7zr(archive, dest)
     )
 
 
@@ -285,9 +339,12 @@ def install_skse(skyrim_dir: Path, progress_cb=None, status_cb=None) -> bool:
         shutil.rmtree(tmp, ignore_errors=True)
         raise RuntimeError(
             "SKSE konnte nicht entpackt werden.\n\n"
-            "Bitte installiere 7-Zip (7z.exe) oder fuehre aus:\n"
-            f"  pip install py7zr\n\n"
-            "Alternativ: Lade SKSE manuell von skse.silverlock.org herunter."
+            "Das mitgelieferte 7zr.exe scheint zu fehlen (bin/7zr.exe). Moegliche "
+            "Ursachen: Launcher-Installation beschaedigt, oder eine Antivirus-Software "
+            "hat bin/7zr.exe entfernt. Launcher neu installieren oder bin/7zr.exe als "
+            "vertrauenswuerdig einstufen.\n\n"
+            "Notfall-Workaround: 7-Zip (https://www.7-zip.org) installieren, danach "
+            "erneut auf Aktualisieren klicken."
         )
 
     if status_cb:

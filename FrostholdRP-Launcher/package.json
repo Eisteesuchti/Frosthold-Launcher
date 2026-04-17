@@ -1,6 +1,6 @@
 {
   "name": "frostholdrp-launcher",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "FrostholdRP Skyrim Multiplayer Launcher",
   "author": "FrostholdRP",
   "main": "main.js",
@@ -8,12 +8,13 @@
     "start": "electron .",
     "clean:dist": "node scripts/clean-dist.mjs",
     "prepare-runtime": "node scripts/prepare-python-runtime.mjs",
-    "pack": "npm run clean:dist && npm run prepare-runtime && electron-builder --win portable --x64",
-    "installer": "npm run clean:dist && npm run prepare-runtime && electron-builder --win nsis --x64",
-    "dist": "npm run clean:dist && npm run prepare-runtime && electron-builder --win nsis portable --x64",
-    "dist:installer": "npm run clean:dist && npm run prepare-runtime && electron-builder --win nsis --x64",
-    "dist:portable": "npm run clean:dist && npm run prepare-runtime && electron-builder --win portable --x64",
-    "dist:publish": "npm run clean:dist && npm run prepare-runtime && electron-builder --win nsis --x64 --publish always",
+    "prepare-7zr": "node scripts/prepare-7zr.mjs",
+    "pack": "npm run clean:dist && npm run prepare-runtime && npm run prepare-7zr && electron-builder --win portable --x64",
+    "installer": "npm run clean:dist && npm run prepare-runtime && npm run prepare-7zr && electron-builder --win nsis --x64",
+    "dist": "npm run clean:dist && npm run prepare-runtime && npm run prepare-7zr && electron-builder --win nsis portable --x64",
+    "dist:installer": "npm run clean:dist && npm run prepare-runtime && npm run prepare-7zr && electron-builder --win nsis --x64",
+    "dist:portable": "npm run clean:dist && npm run prepare-runtime && npm run prepare-7zr && electron-builder --win portable --x64",
+    "dist:publish": "npm run clean:dist && npm run prepare-runtime && npm run prepare-7zr && electron-builder --win nsis --x64 --publish always",
     "release": "node scripts/release-launcher.mjs"
   },
   "devDependencies": {
@@ -55,6 +56,10 @@
       {
         "from": "python-runtime",
         "to": "python-runtime"
+      },
+      {
+        "from": "bin",
+        "to": "bin"
       }
     ],
     "win": {

@@ -188,6 +188,21 @@ function getBundledPythonExe() {
   return null;
 }
 
+/** Mitgelieferter 7zr.exe (npm run prepare-7zr) — entpackt SKSE (.7z mit BCJ2-Filter),
+ *  wo py7zr an BCJ2 scheitert. Spieler brauchen kein vorinstalliertes 7-Zip. */
+function getBundled7zrExe() {
+  if (process.platform !== 'win32') return null;
+  const candidates = [];
+  if (app.isPackaged) {
+    candidates.push(path.join(process.resourcesPath, 'bin', '7zr.exe'));
+  }
+  candidates.push(path.join(__dirname, 'bin', '7zr.exe'));
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
 function runPythonJson(args) {
   return new Promise((resolve, reject) => {
     const script = getPythonScriptPath();
@@ -195,9 +210,15 @@ function runPythonJson(args) {
       reject(new Error('FrostMP-Launcher.py nicht gefunden. Bitte Launcher-Ordner korrekt installieren.'));
       return;
     }
+    const env = { ...process.env };
+    const bundled7zr = getBundled7zrExe();
+    if (bundled7zr) {
+      env.FROSTMP_BUNDLED_7ZR = bundled7zr;
+    }
     const opts = {
       cwd: path.dirname(script),
       windowsHide: true,
+      env,
     };
 
     const attempts = [];
