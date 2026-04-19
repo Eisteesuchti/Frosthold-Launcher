@@ -417,6 +417,102 @@ function isPortableExecutable() {
   return !!(process.env.PORTABLE_EXECUTABLE_FILE || process.env.PORTABLE_EXECUTABLE_DIR);
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// UAC-Relaunch: Wenn Skyrim unter C:\Program Files (x86)\… liegt, kann der
+// nicht-elevated Prozess dort nicht schreiben. Wir bieten dem User an, den
+// Launcher automatisch mit Admin-Rechten neu zu starten.
+//
+// Ablauf:
+//   1) Python meldet error=needs_elevation (mit path=…).
+//   2) Renderer ruft ipc 'relaunch-as-admin' auf.
+//   3) Wir starten eine neue Launcher-Instanz per PowerShell
+//      `Start-Process -Verb RunAs` (das triggert den UAC-Dialog).
+//   4) Wenn der UAC-Prompt bestaetigt wird, schliessen wir die aktuelle
+//      Instanz — die neue kommt hoch mit Admin-Token.
+//   5) Wenn der UAC-Prompt abgelehnt wird (User klickt Abbrechen), werfen
+//      wir einen Fehler zurueck und die aktuelle Instanz bleibt offen.
+// ───────────────────────────────────────────────────────────────────────────
+
+function isCurrentProcessElevated() {
+  if (process.platform !== 'win32') return false;
+  // net session klappt NUR als Admin, egal welche OS-Version. Das ist
+  // der zuverlaessigste Shortcut ohne WinAPI-Bindings.
+  return new Promise((resolve) => {
+    execFile(
+      'net',
+      ['session'],
+      { windowsHide: true },
+      (err) => resolve(!err),
+    );
+  });
+}
+
+/**
+ * Startet den Launcher per UAC-Prompt neu und beendet die aktuelle Instanz.
+ * Gibt { ok:true } zurueck wenn UAC akzeptiert wurde (aktuelle Instanz
+ * wird dann in 500ms beendet), { ok:false, reason } sonst.
+ */
+function relaunchAsAdmin() {
+  return new Promise((resolve) => {
+    if (process.platform !== 'win32') {
+      resolve({ ok: false, reason: 'not_windows' });
+      return;
+    }
+    const target = process.execPath;
+    // Wir geben dem neu gestarteten Prozess ein Flag mit, damit er sofort
+    // den Install-Button triggert (optional — vorerst lassen wir den User
+    // manuell "Aktualisieren" klicken, damit er sieht dass alles laeuft).
+    const wd = path.dirname(target);
+    const args = ['--fh-elevated-relaunch'];
+    const argList = args.map((a) => `'${a.replace(/'/g, "''")}'`).join(',');
+    const ps = argList
+      ? `Start-Process -FilePath '${target.replace(/'/g, "''")}' -WorkingDirectory '${wd.replace(/'/g, "''")}' -Verb RunAs -ArgumentList ${argList}`
+      : `Start-Process -FilePath '${target.replace(/'/g, "''")}' -WorkingDirectory '${wd.replace(/'/g, "''")}' -Verb RunAs`;
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', ps],
+      { windowsHide: true },
+      (err, _stdout, stderr) => {
+        if (err) {
+          // ExitCode !=0 heisst normalerweise: User hat UAC abgebrochen
+          // ODER der Start-Process-Call selber ist gescheitert.
+          resolve({
+            ok: false,
+            reason: 'uac_cancelled_or_failed',
+            detail: String((stderr || err.message || '').toString().trim()),
+          });
+          return;
+        }
+        // Nach erfolgreichem UAC-Prompt: kurz warten (die neue Instanz
+        // braucht ~1-2s bis ihr Fenster oben ist) und dann die aktuelle
+        // ordentlich beenden.
+        setTimeout(() => {
+          try { app.quit(); } catch (_) {}
+          setTimeout(() => { try { process.exit(0); } catch (_) {} }, 500);
+        }, 500);
+        resolve({ ok: true });
+      },
+    );
+  });
+}
+
+ipcMain.handle('is-elevated', async () => {
+  try {
+    const r = await isCurrentProcessElevated();
+    return { ok: true, elevated: !!r };
+  } catch (e) {
+    return { ok: false, elevated: false, error: String(e.message || e) };
+  }
+});
+
+ipcMain.handle('relaunch-as-admin', async () => {
+  try {
+    return await relaunchAsAdmin();
+  } catch (e) {
+    return { ok: false, reason: 'error', detail: String(e.message || e) };
+  }
+});
+
 /** Optional: in frostmp-launcher.json "launcher_update_feed_url": "https://…/ordner-mit-latest-yml/" (generic provider) */
 function configureAutoUpdaterFeedFromConfig() {
   const cfg = loadLocalConfig();

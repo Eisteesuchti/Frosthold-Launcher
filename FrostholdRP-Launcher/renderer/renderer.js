@@ -362,6 +362,42 @@ document.addEventListener('DOMContentLoaded', async () => {
         const loginBtn = $('btn-discord-login');
         if (loginBtn) loginBtn.classList.add('highlight-pulse');
         setTimeout(() => { if (loginBtn) loginBtn.classList.remove('highlight-pulse'); }, 3000);
+      } else if (r && r.error === 'needs_elevation') {
+        // Skyrim liegt in einem UAC-geschuetzten Ordner (typisch:
+        // C:\Program Files (x86)\Steam\…). Der Install hat zwar schon
+        // Retries/Process-Kill/Attribut-Clear probiert, aber am Ende
+        // brauchen wir wirklich Admin-Rechte. Wir bieten dem User an,
+        // den Launcher gezielt elevated neu zu starten.
+        hideProgressPanel(0);
+        const pathHint = r.path ? `\n\nBetroffene Datei:\n${r.path}` : '';
+        const confirmed = window.confirm(
+          'Dein Skyrim liegt unter "C:\\Program Files (x86)", Windows blockiert '
+          + 'dort Schreibzugriffe ohne Administrator-Rechte.\n\n'
+          + 'Der Launcher kann sich jetzt mit Admin-Rechten neu starten, '
+          + 'damit das Update durchlaeuft. Windows wird dich nach Bestaetigung '
+          + 'fragen.'
+          + pathHint
+          + '\n\nJetzt als Administrator neu starten?'
+        );
+        if (confirmed) {
+          showToast('Launcher wird mit Admin-Rechten neu gestartet…', 10000);
+          const rr = await fh.relaunchAsAdmin();
+          if (!rr || !rr.ok) {
+            showToast(
+              'Neustart als Administrator fehlgeschlagen oder abgebrochen. '
+              + 'Bitte den Launcher von Hand per Rechtsklick -> '
+              + '"Als Administrator ausfuehren" starten.',
+              10000,
+            );
+          }
+          // Bei Erfolg schliesst main.js die aktuelle Instanz von selbst.
+        } else {
+          showToast(
+            'Update abgebrochen. Ohne Admin-Rechte kann der Launcher keine '
+            + 'Dateien in "Program Files" schreiben.',
+            8000,
+          );
+        }
       } else {
         const msg = (r && r.message) || (r && r.error) || JSON.stringify(r);
         showToast(`Fehler: ${msg}`, 8000);
@@ -455,6 +491,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         const loginBtn = $('btn-discord-login');
         if (loginBtn) loginBtn.classList.add('highlight-pulse');
         setTimeout(() => { if (loginBtn) loginBtn.classList.remove('highlight-pulse'); }, 3000);
+      } else if (r && r.error === 'needs_elevation') {
+        // Gleicher Fall wie beim Aktualisieren-Button: Skyrim in
+        // Program Files → Admin-Rechte noetig fuer das Auto-Update.
+        const pathHint = r.path ? `\n\nBetroffene Datei:\n${r.path}` : '';
+        const confirmed = window.confirm(
+          'Dein Skyrim liegt unter "C:\\Program Files (x86)". Der Launcher '
+          + 'muesste zum Aktualisieren der Client-Dateien Admin-Rechte haben.'
+          + pathHint
+          + '\n\nJetzt als Administrator neu starten?'
+        );
+        if (confirmed) {
+          showToast('Launcher wird mit Admin-Rechten neu gestartet…', 10000);
+          const rr = await fh.relaunchAsAdmin();
+          if (!rr || !rr.ok) {
+            showToast(
+              'Neustart als Administrator fehlgeschlagen oder abgebrochen.',
+              10000,
+            );
+          }
+        } else {
+          showToast('Start abgebrochen (Admin-Rechte abgelehnt).', 6000);
+        }
       } else {
         const msg = (r && r.message) || (r && r.error) || JSON.stringify(r);
         showToast(`Fehler: ${msg}`, 8000);

@@ -11,14 +11,23 @@ import re
 import sys
 import subprocess
 import time
+import stat
+import errno
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 import urllib.request
 import urllib.error
 import zipfile
 import shutil
 import tempfile
 import threading
+
+# Windows-spezifische Imports. Auf Linux/macOS laeuft der Launcher zwar nicht
+# produktiv, aber Tests und CI sollen weiterhin importieren koennen.
+_IS_WIN = os.name == "nt"
+if _IS_WIN:
+    import ctypes
+    from ctypes import wintypes  # noqa: F401  (Typen werden im Aufruf gebraucht)
 
 # ============================================================================
 # Progress-Events fuer den Electron-Launcher.
@@ -494,6 +503,288 @@ def install_vc_redist() -> bool:
     )
 
 
+# ============================================================================
+# Robuste Datei-Operationen fuer die Install-Phase.
+#
+# Hintergrund: Auf vielen Spieler-PCs liegt Skyrim unter "C:\Program Files
+# (x86)\Steam\...". Selbst mit Admin-Rechten failen Writes dort haeufig mit
+# [Errno 13] Permission denied. Konkrete Ursachen die wir in der Praxis
+# gesehen haben:
+#
+#   1) Eine alte SkyrimPlatformCEF.exe / SkyrimPlatformBrowser.exe / SkyrimSE
+#      laeuft noch im Hintergrund und haelt die Ziel-Datei offen
+#      (Sharing-Violation, Python uebersetzt das ebenfalls zu Errno 13).
+#   2) Die Zieldatei hat ReadOnly/Hidden/System-Attribute (z.B. vom
+#      .hidden-Suffix-Mechanismus von Skyrim Platform oder von Mod-Managern).
+#      open("wb") scheitert dann auch als Admin.
+#   3) Windows Defender scannt die Datei gerade (Real-Time-Scan) und haelt
+#      sie kurzzeitig im Share-Lock. Retry nach ein paar hundert Millisekunden
+#      reicht dann meistens.
+#   4) Der Prozess ist nicht elevated, und der Ordner ist UAC-geschuetzt.
+#      Hier bleibt nur Elevation.
+#
+# Die Helper unten versuchen die Faelle 1-3 transparent zu behandeln und
+# signalisieren 4 als strukturierten NeedsElevation-Error, damit Electron
+# den Launcher gezielt mit Admin-Rechten neu starten kann.
+# ============================================================================
+
+_FILE_ATTRIBUTE_NORMAL = 0x80
+_FILE_ATTRIBUTE_READONLY = 0x01
+
+# Prozesse die typischerweise Skyrim-Platform-Dateien offen halten, wenn das
+# Spiel abgestuerzt ist oder der Launcher nach einem Crash direkt wieder
+# aufgemacht wird. Reihenfolge: erst die Helper (damit CEF den Renderer
+# nicht neu forkt), dann SKSE/SkyrimSE selbst.
+_SKYRIM_LOCK_PROCESSES = (
+    "SkyrimPlatformCEF.exe",
+    "SkyrimPlatformBrowser.exe",
+    "SkyrimPlatformRender.exe",
+    "skse64_loader.exe",
+    "SkyrimSE.exe",
+)
+
+
+class NeedsElevation(OSError):
+    """Wird geworfen, wenn ein Write definitiv nur mit Admin-Rechten klappt.
+
+    Tragt den failenden Pfad fuer eine aussagekraeftige Fehlermeldung.
+    """
+
+    def __init__(self, path: Path, original: Optional[BaseException] = None):
+        msg = (
+            f"Schreibzugriff auf {path} verweigert. Der Launcher muss mit "
+            f"Administrator-Rechten neu gestartet werden."
+        )
+        super().__init__(errno.EACCES, msg)
+        self.path = str(path)
+        self.original = original
+
+
+def _is_elevated() -> bool:
+    """True, wenn der aktuelle Prozess als Admin/elevated laeuft."""
+    if not _IS_WIN:
+        return os.geteuid() == 0  # type: ignore[attr-defined]
+    try:
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+
+def _path_uac_protected(p: Path) -> bool:
+    """Grobe Heuristik: Liegt p unter Program Files/WindowsApps/System32?
+
+    Dort koennen Standard-User nicht schreiben ohne Elevation.
+    """
+    if not _IS_WIN:
+        return False
+    try:
+        s = str(p.resolve()).lower()
+    except Exception:
+        s = str(p).lower()
+    return any(
+        frag in s
+        for frag in (
+            r"\program files",      # enthaelt auch "program files (x86)"
+            r"\windows\system32",
+            r"\windowsapps\\",
+        )
+    )
+
+
+def _kill_skyrim_processes() -> List[str]:
+    """Killt bekannte Skyrim/Platform-Prozesse. Best-effort, silent.
+
+    Gibt die Namen zurueck, bei denen taskkill ein OK (Exitcode 0) meldete —
+    nur fuers Logging interessant, nie fuer Flow-Control.
+    """
+    if not _IS_WIN:
+        return []
+    killed: List[str] = []
+    for name in _SKYRIM_LOCK_PROCESSES:
+        try:
+            r = subprocess.run(
+                ["taskkill", "/F", "/IM", name],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=0x08000000,  # CREATE_NO_WINDOW
+                timeout=5,
+            )
+            if r.returncode == 0:
+                killed.append(name)
+        except Exception:
+            continue
+    # Kurz warten, damit Windows die File-Handles wirklich freigibt. CEF
+    # braucht ein paar Millisekunden zum Aufraeumen nach SIGKILL.
+    if killed:
+        time.sleep(0.3)
+    return killed
+
+
+def _clear_blocking_attrs(path: Path) -> None:
+    """Entfernt ReadOnly/Hidden/System, damit open("wb") nicht scheitert.
+
+    No-op wenn die Datei nicht existiert — das haelt den Caller einfach,
+    weil er den Check nicht selber machen muss.
+    """
+    try:
+        if not path.exists():
+            return
+    except OSError:
+        return
+    if _IS_WIN:
+        try:
+            ctypes.windll.kernel32.SetFileAttributesW(
+                str(path), _FILE_ATTRIBUTE_NORMAL
+            )
+            return
+        except Exception:
+            pass
+    try:
+        os.chmod(str(path), stat.S_IWRITE | stat.S_IREAD)
+    except Exception:
+        pass
+
+
+def _is_permission_error(exc: BaseException) -> bool:
+    """Python wirft bei Windows-Sharing-Violations manchmal PermissionError,
+    manchmal OSError mit winerror=32. Beides soll als 'retryable' gelten."""
+    if isinstance(exc, PermissionError):
+        return True
+    if isinstance(exc, OSError):
+        win = getattr(exc, "winerror", None)
+        if win in (5, 32, 33):  # ACCESS_DENIED, SHARING_VIOLATION, LOCK_VIOLATION
+            return True
+        if exc.errno in (errno.EACCES, errno.EPERM):
+            return True
+    return False
+
+
+def _robust_write(dest: Path, writer_fn: Callable[[Any], None]) -> None:
+    """Oeffnet `dest` fuer binary-write und ruft writer_fn(handle) auf.
+
+    Strategie gegen Windows-Permission-/Lock-Zicken:
+      1) Direkt oeffnen + schreiben.
+      2) Bei Fail: Attribute clearen, kurz warten, retry (5x exponential).
+      3) Wenn immer noch blockiert: Ziel aus dem Weg umbenennen
+         (`<file>.old-<ts>`) und frisch neu anlegen. Unter Windows klappt
+         MoveFile oft auch wenn die Datei geoeffnet ist, weil nur der
+         Open-Handle gehalten wird — nicht der Directory-Slot.
+      4) Wenn auch das failt: Temp-Datei im selben Verzeichnis schreiben und
+         per os.replace() atomic druebermoven (funktioniert auf dem gleichen
+         Volume ohne Schreibrecht auf die Ziel-Datei, solange wir
+         Verzeichnis-Schreibrecht haben).
+      5) Wenn alles scheitert und wir NICHT elevated sind -> NeedsElevation.
+         Wenn wir elevated sind und trotzdem nix geht -> original-Fehler raus.
+    """
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    def _attempt(path: Path) -> None:
+        _clear_blocking_attrs(path)
+        with open(path, "wb") as dst:
+            writer_fn(dst)
+
+    last_err: Optional[BaseException] = None
+
+    # 1+2) Direkt schreiben mit Retry (0.1, 0.2, 0.4, 0.8, 1.6 Sekunden).
+    for attempt in range(5):
+        try:
+            _attempt(dest)
+            return
+        except (PermissionError, OSError) as e:
+            if not _is_permission_error(e):
+                raise
+            last_err = e
+            time.sleep(0.1 * (2 ** attempt))
+
+    # 3) Rename-out-of-way-Fallback. Die alte Datei lassen wir liegen — ein
+    # spaeterer Install-Cleanup koennte sie aufsammeln, aber das ist uns
+    # hier egal, Hauptsache die neue Datei landet an der richtigen Stelle.
+    try:
+        if dest.exists():
+            ts = int(time.time())
+            sidelined = dest.parent / f"{dest.name}.old-{ts}"
+            os.replace(str(dest), str(sidelined))
+        _attempt(dest)
+        return
+    except (PermissionError, OSError) as e:
+        if _is_permission_error(e):
+            last_err = e
+        else:
+            raise
+
+    # 4) Atomic via Temp-Datei im gleichen Verzeichnis.
+    tmp = dest.parent / f".{dest.name}.tmp-{int(time.time()*1000)}"
+    try:
+        with open(tmp, "wb") as dst:
+            writer_fn(dst)
+        _clear_blocking_attrs(dest)
+        os.replace(str(tmp), str(dest))
+        return
+    except (PermissionError, OSError) as e:
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+        if _is_permission_error(e):
+            last_err = e
+        else:
+            raise
+
+    # 5) Game over. Wenn wir nicht elevated sind, geben wir das dem Caller
+    # mit, damit Electron die UAC-Elevation anbieten kann.
+    if not _is_elevated() and _path_uac_protected(dest):
+        raise NeedsElevation(dest, last_err)
+    assert last_err is not None
+    raise last_err
+
+
+def _robust_copy_file(src_file: Path, dest: Path) -> None:
+    """Robust-Variante von shutil.copy2 — erhaelt mtime/mode wo moeglich."""
+    with open(str(src_file), "rb") as s:
+        _robust_write(dest, lambda dst: shutil.copyfileobj(s, dst, 1024 * 1024))
+    try:
+        shutil.copystat(str(src_file), str(dest))
+    except Exception:
+        # Metadaten sind "nice to have" — wenn wir mtime nicht setzen koennen,
+        # ist die Datei trotzdem installiert und funktioniert.
+        pass
+
+
+def _robust_copytree(src_dir: Path, dest_dir: Path) -> None:
+    """Robust-Variante von shutil.copytree(dirs_exist_ok=True).
+
+    Walkt den Source-Tree und kopiert jede Datei ueber _robust_copy_file,
+    damit wir pro Datei den kompletten Retry-Apparat bekommen.
+    """
+    src_dir = Path(src_dir)
+    dest_dir = Path(dest_dir)
+    for root, _dirs, files in os.walk(str(src_dir)):
+        rel = Path(root).relative_to(src_dir)
+        out_dir = dest_dir / rel
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for f in files:
+            _robust_copy_file(Path(root) / f, out_dir / f)
+
+
+def _robust_unlink(path: Path) -> bool:
+    """Loescht path mit Attribut-Clear + Retry. Gibt True bei Erfolg zurueck."""
+    try:
+        if not path.exists():
+            return True
+    except OSError:
+        return False
+    for attempt in range(3):
+        try:
+            _clear_blocking_attrs(path)
+            path.unlink()
+            return True
+        except (PermissionError, OSError) as e:
+            if not _is_permission_error(e):
+                return False
+            time.sleep(0.15 * (attempt + 1))
+    return False
+
+
 def install_skse(skyrim_dir: Path, progress_cb=None, status_cb=None) -> bool:
     """Download and install SKSE64 into the Skyrim directory."""
     if status_cb:
@@ -540,12 +831,9 @@ def install_skse(skyrim_dir: Path, progress_cb=None, status_cb=None) -> bool:
     for item in extracted.iterdir():
         dest = skyrim_dir / item.name
         if item.is_dir():
-            if dest.exists():
-                shutil.copytree(str(item), str(dest), dirs_exist_ok=True)
-            else:
-                shutil.copytree(str(item), str(dest))
+            _robust_copytree(item, dest)
         else:
-            shutil.copy2(str(item), str(dest))
+            _robust_copy_file(item, dest)
 
     shutil.rmtree(tmp, ignore_errors=True)
     return True
@@ -558,6 +846,12 @@ def install_client_dist_from_zip(
     """Extract a client dist zip into the Skyrim directory."""
     if status_cb:
         status_cb("Client-Dateien werden entpackt...")
+
+    # Zombie-Prozesse vor dem Schreiben killen — das ist die haeufigste
+    # Ursache fuer "Permission denied" auf SkyrimPlatformCEF.exe(.hidden) &
+    # Konsorten: der Spieler hatte Skyrim an, Spiel ist gecrasht, der
+    # CEF-Helper haengt noch im Memory und haelt die exe-Datei gelockt.
+    _kill_skyrim_processes()
 
     with zipfile.ZipFile(str(zip_path), "r") as zf:
         members = zf.namelist()
@@ -577,10 +871,11 @@ def install_client_dist_from_zip(
                 continue
 
             dest = skyrim_dir / rel.replace("/", os.sep)
-            dest.parent.mkdir(parents=True, exist_ok=True)
-
-            with zf.open(member) as src, open(dest, "wb") as dst:
-                shutil.copyfileobj(src, dst)
+            with zf.open(member) as src:
+                _robust_write(
+                    dest,
+                    lambda dst, _src=src: shutil.copyfileobj(_src, dst, 1024 * 1024),
+                )
 
             if progress_cb:
                 progress_cb(i + 1, total)
@@ -597,6 +892,8 @@ def install_client_dist_from_folder(
     if status_cb:
         status_cb("Client-Dateien werden kopiert...")
 
+    _kill_skyrim_processes()
+
     all_files = list(source.rglob("*"))
     files = [f for f in all_files if f.is_file()]
     total = len(files)
@@ -604,8 +901,7 @@ def install_client_dist_from_folder(
     for i, src_file in enumerate(files):
         rel = src_file.relative_to(source)
         dest = skyrim_dir / rel
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(str(src_file), str(dest))
+        _robust_copy_file(src_file, dest)
         if progress_cb:
             progress_cb(i + 1, total)
 
@@ -749,8 +1045,7 @@ def cleanup_legacy_client_files(skyrim_dir: Path) -> List[str]:
     for rel in (LEGACY_CLIENT_PLUGIN, LEGACY_CLIENT_SETTINGS):
         p = skyrim_dir / rel
         try:
-            if p.is_file():
-                p.unlink()
+            if p.is_file() and _robust_unlink(p):
                 removed.append(rel)
         except OSError:
             pass
@@ -855,10 +1150,22 @@ def _install_client_files_sync(
 
 def _install_missing_components(
     cfg: dict, skyrim_dir: Path, client_src: str
-) -> Tuple[bool, Optional[str], Optional[str]]:
+) -> Tuple[bool, Optional[str], Optional[str], Optional[Dict[str, Any]]]:
     """
-    Returns (success, error_code, message). error_code e.g. client_dist_required, install_failed.
+    Returns (success, error_code, message, extras).
+
+    error_code: z.B. client_dist_required, install_failed, needs_elevation.
+    extras: optionales Dict mit Zusatz-Info (z.B. failender Pfad bei
+    needs_elevation) fuer die Electron-Seite.
     """
+
+    def _wrap_install_err(exc: BaseException) -> Tuple[bool, str, str, Optional[Dict[str, Any]]]:
+        # NeedsElevation soll Electron NICHT als generischer Stacktrace
+        # erreichen — dann koennen wir den Launcher gezielt neu starten.
+        if isinstance(exc, NeedsElevation):
+            return False, "needs_elevation", str(exc), {"path": exc.path}
+        return False, "install_failed", str(exc), None
+
     components = check_all_components(skyrim_dir)
     missing = [c for c in components if not c.installed]
     client_src = (client_src or "").strip()
@@ -887,8 +1194,8 @@ def _install_missing_components(
                     patch["client_dist_remote_fp"] = new_fp
                 save_config(patch)
             except Exception as e:
-                return False, "install_failed", str(e)
-            return True, None, None
+                return _wrap_install_err(e)
+            return True, None, None, None
 
         if remote_fp and stored_fp and remote_fp != stored_fp:
             try:
@@ -906,17 +1213,17 @@ def _install_missing_components(
                 if new_fp:
                     save_config({"client_dist_remote_fp": new_fp})
             except Exception as e:
-                return False, "install_failed", str(e)
-            return True, None, None
+                return _wrap_install_err(e)
+            return True, None, None, None
 
         # Erstes Mal mit dieser Logik: Fingerprint speichern ohne erneuten Download
         if remote_fp and not stored_fp:
             save_config({"client_dist_remote_fp": remote_fp})
 
-        return True, None, None
+        return True, None, None, None
 
     if not missing:
-        return True, None, None
+        return True, None, None, None
 
     needs_skse = any(c.name == "SKSE64" and not c.installed for c in missing)
     needs_client = any(
@@ -929,7 +1236,7 @@ def _install_missing_components(
         return False, "client_dist_required", (
             "Keine Client-Download-Quelle. Lege frosthold-client-dist.url (eine Zeile URL) "
             "neben FrostMP-Launcher.py an oder setze FROSTHOLD_CLIENT_DIST_URL."
-        )
+        ), None
 
     try:
         if needs_vcredist:
@@ -957,13 +1264,13 @@ def _install_missing_components(
                 if new_fp:
                     save_config({"client_dist_remote_fp": new_fp})
     except Exception as e:
-        return False, "install_failed", str(e)
+        return _wrap_install_err(e)
 
     components = check_all_components(skyrim_dir)
     still = [c.name for c in components if not c.installed]
     if still:
-        return False, "install_incomplete", ", ".join(still)
-    return True, None, None
+        return False, "install_incomplete", ", ".join(still), None
+    return True, None, None, None
 
 
 def compute_launcher_pending(cfg: dict, skyrim_dir: Optional[Path]) -> Dict[str, Any]:
@@ -1039,7 +1346,7 @@ def ensure_components_install_headless() -> dict:
         }
 
     client_src = get_effective_client_dist(cfg)
-    ok, err, msg = _install_missing_components(cfg, skyrim_dir, client_src)
+    ok, err, msg, extras = _install_missing_components(cfg, skyrim_dir, client_src)
     if not ok:
         out: Dict[str, Any] = {
             "ok": False,
@@ -1051,6 +1358,8 @@ def ensure_components_install_headless() -> dict:
         if err == "client_dist_required":
             comps = check_all_components(skyrim_dir)
             out["missing"] = [c.name for c in comps if not c.installed]
+        if err == "needs_elevation" and extras:
+            out["path"] = extras.get("path")
         return out
 
     skse = find_skse_loader(skyrim_dir)
@@ -1113,12 +1422,14 @@ def ensure_components_and_launch_headless() -> dict:
         return {"ok": False, "error": "skyrim_not_found", "message": "Skyrim SE wurde nicht gefunden. Pfad in den Einstellungen setzen."}
 
     client_src = get_effective_client_dist(cfg)
-    ok, err, msg = _install_missing_components(cfg, skyrim_dir, client_src)
+    ok, err, msg, extras = _install_missing_components(cfg, skyrim_dir, client_src)
     if not ok:
         out: Dict[str, Any] = {"ok": False, "error": err, "message": msg}
         if err == "client_dist_required":
             comps = check_all_components(skyrim_dir)
             out["missing"] = [c.name for c in comps if not c.installed]
+        if err == "needs_elevation" and extras:
+            out["path"] = extras.get("path")
         return out
 
     skse = find_skse_loader(skyrim_dir)

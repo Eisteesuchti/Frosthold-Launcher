@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('fh', {
   discordLogin: () => ipcRenderer.invoke('discord-login'),
   discordLogout: () => ipcRenderer.invoke('discord-logout'),
   discordSession: () => ipcRenderer.invoke('discord-session'),
+  isElevated: () => ipcRenderer.invoke('is-elevated'),
+  relaunchAsAdmin: () => ipcRenderer.invoke('relaunch-as-admin'),
 
   /**
    * Abo fuer Live-Install-Progress-Events vom Python-Backend.

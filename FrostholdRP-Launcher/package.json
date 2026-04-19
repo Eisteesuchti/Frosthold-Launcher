@@ -1,6 +1,6 @@
 {
   "name": "frostholdrp-launcher",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "FrostholdRP Skyrim Multiplayer Launcher",
   "author": "FrostholdRP",
   "main": "main.js",
