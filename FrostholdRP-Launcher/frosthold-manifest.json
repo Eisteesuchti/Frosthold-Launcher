@@ -1,15 +1,15 @@
 ﻿{
-  "manifestVersion": 1,
-  "bundleRevision": "2026-04-19.11",
-  "updatePolicy": "conservative",
-  "policyDe": {
-    "title": "Updates & Kompatibilität",
-    "body": "Beim Start prüft der Launcher, ob SKSE/Client fehlen oder eine neue Client-ZIP auf dem Server liegt — „Aktualisieren“ erscheint nur in diesem Fall. „Client neu laden“ holt die Dateien bei Problemen erneut von der Quelle. Unangekündigte Server-Updates können kurzzeitig Inkompatibilität bedeuten."
-  },
-  "quickCheckDe": {
-    "missing": "Es fehlen noch Komponenten. Nutze „Aktualisieren“, um SKSE und den Client zu installieren.",
-    "pendingUpdate": "Ein Update oder eine Installation steht aus — bitte unten zuerst auf „Aktualisieren“.",
-    "ready": "Schnellprüfung: installierte Komponenten sehen gültig aus.",
-    "noSkyrim": "Skyrim Special Edition wurde nicht gefunden. Installiere das Spiel über Steam oder trage den Pfad in den Einstellungen ein."
-  }
+    "manifestVersion":  1,
+    "bundleRevision":  "2026-04-19.12",
+    "updatePolicy":  "conservative",
+    "policyDe":  {
+                     "title":  "Updates \u0026 Kompatibilität",
+                     "body":  "Beim Start prüft der Launcher, ob SKSE/Client fehlen oder eine neue Client-ZIP auf dem Server liegt — „Aktualisieren“ erscheint nur in diesem Fall. „Client neu laden“ holt die Dateien bei Problemen erneut von der Quelle. Unangekündigte Server-Updates können kurzzeitig Inkompatibilität bedeuten."
+                 },
+    "quickCheckDe":  {
+                         "missing":  "Es fehlen noch Komponenten. Nutze „Aktualisieren“, um SKSE und den Client zu installieren.",
+                         "pendingUpdate":  "Ein Update oder eine Installation steht aus — bitte unten zuerst auf „Aktualisieren“.",
+                         "ready":  "Schnellprüfung: installierte Komponenten sehen gültig aus.",
+                         "noSkyrim":  "Skyrim Special Edition wurde nicht gefunden. Installiere das Spiel über Steam oder trage den Pfad in den Einstellungen ein."
+                     }
 }
