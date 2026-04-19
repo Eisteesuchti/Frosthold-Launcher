@@ -740,8 +740,23 @@ async function syncProfileIdFromSession() {
   if (result.status === 'ok' && result.session && typeof result.session.profileId === 'number'
       && Number.isFinite(result.session.profileId) && result.session.profileId >= 1) {
     const pid = Math.floor(result.session.profileId);
-    if (prev.profile_id !== pid) {
+    // WICHTIG: wir muessen hier NICHT nur die profile_id persistieren, sondern
+    // IMMER auch den sessionToken in die Chat-Credentials zuruecksynchronisieren.
+    // Sonst bleibt das Feld leer, wenn es irgendwo unterwegs geleert wurde
+    // (z.B. durch einen transient-401 nach chat-server-Restart, save-config mit
+    // leerem Feld, oder einen alten Launcher der das Feld nie setzte).
+    // Ohne diese Tokens fehlen im `frostmp-client-settings.txt` die Chat-Keys
+    // und der Ingame-FrostholdChatService macht silent nichts (kein Chat-UI,
+    // kein Emote-Wheel, kein Interact-Menu).
+    const prevUid = String(prev.frosthold_chat_user_id || '').trim();
+    const prevSec = String(prev.frosthold_chat_secret || '').trim();
+    const needsPidSync = prev.profile_id !== pid;
+    const needsTokenSync = prevUid !== token || prevSec !== token;
+    if (needsPidSync || needsTokenSync) {
       prev.profile_id = pid;
+      prev.frosthold_chat_user_id = token;
+      prev.frosthold_chat_secret = token;
+      if (prev.frosthold_chat_enabled !== true) prev.frosthold_chat_enabled = true;
       saveLocalConfig(prev);
     }
     // Verifizierten Wert zusaetzlich in die Session-Datei schreiben. Diese ist
@@ -754,9 +769,16 @@ async function syncProfileIdFromSession() {
   }
 
   if (result.status === 'invalid') {
-    // Session wurde vom Chat-Server explizit abgelehnt -> lokal alles
-    // wegraeumen, damit kein alter profile_id haengenbleibt.
-    clearDiscordSession();
+    // Session wurde vom Chat-Server abgelehnt. Das kann transient sein
+    // (chat-server hat gerade neu gestartet und kennt unsere in-memory
+    // Session nicht mehr) oder permanent (Token wirklich widerrufen).
+    //
+    // Wir verhalten uns defensiv: nur `profile_id` und launcher-config-tokens
+    // zuruecksetzen, damit Play blockt ("login required"). Die Discord-Session
+    // selbst BEHALTEN wir — sobald der chat-server wieder ok meldet, wird
+    // oben in der status='ok'-Branch alles automatisch rekonstruiert.
+    // Falls der Token wirklich tot ist, kann der User per Button manuell
+    // neu einloggen.
     prev.profile_id = 0;
     prev.frosthold_chat_user_id = '';
     prev.frosthold_chat_secret = '';
