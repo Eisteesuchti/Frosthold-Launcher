@@ -17,12 +17,18 @@ werden.
 - **Projekt:** [skymp / skymp](https://github.com/skymp/skymp)
 - **Lizenz:** GNU General Public License v3.0 (GPL-3.0)
 - **Verwendung:** FrostMP entstand als Fork-/Custom-Build-Pipeline auf Basis
-  des SkyMP-Stacks. Der `frostmp-client.js`, der `chat-server`, die
-  Gamemode-Anbindung und der Server-Side-Bridge enthalten direkt von SkyMP
-  abgeleiteten Code (`skymp5-client`, `skymp5-server`, `skymp5-front`,
-  `skymp5-functions-lib`, `skymp5-server-addons`, `skymp5-scripts`).
-- **Konsequenz:** Sämtliche von uns ausgelieferten Binaries (insbesondere
-  `frostmp-client.js`) stehen ebenfalls unter GPL-3.0.
+  des SkyMP-Stacks. Der `frostmp-client.js` und die Gamemode-Anbindung
+  enthalten direkt von SkyMP abgeleiteten Code (`skymp5-client`,
+  `skymp5-server`, `skymp5-front`, `skymp5-functions-lib`,
+  `skymp5-server-addons`, `skymp5-scripts`).
+- **Konsequenz:** Sämtliche von uns ausgelieferten, von SkyMP abgeleiteten
+  Binaries (insbesondere `frostmp-client.js`) stehen ebenfalls unter
+  GPL-3.0.
+- **Hinweis:** Unser eigener Chat-/Auth-/Bridge-Server ist eigenständiger
+  Node.js-Code, kommuniziert mit dem SkyMP-Gamemode nur über Netzwerk-APIs
+  und ist damit kein abgeleitetes Werk im Sinne der GPL-3.0. Er wird nicht
+  an Spieler ausgeliefert und liegt in einem eigenen (nicht-öffentlichen)
+  Repository.
 
 Großen Dank an **Pospelov & alle SkyMP-Contributors**.
 
@@ -71,7 +77,7 @@ Bethesda autorisiert noch mit Bethesda verbunden.
 
 | Bibliothek | Lizenz | Zweck |
 |---|---|---|
-| Node.js / npm-Pakete | jeweilige (MIT, BSD, …) | siehe `chat-server/node_modules/*/LICENSE` |
+| Node.js / npm-Pakete | jeweilige (MIT, BSD, …) | Launcher-Server-Side, Lizenzen bei den jeweiligen Paketen im `node_modules/*/LICENSE` |
 | Electron | MIT | FrostholdRP-Launcher |
 | electron-builder | MIT | Installer-Build |
 | Python 3 (Embeddable) | PSF License | Launcher-Backend |
@@ -83,7 +89,7 @@ Bethesda autorisiert noch mit Bethesda verbunden.
 - Du bekommst den FrostMP-Client als GPL-3.0-Software. Quellcode,
   Modifikationen und das Recht zur Weitergabe garantiert dir die GPL.
 - Quellen unseres Wrapper-Codes:
-  - [Eisteesuchti/Frosthold-Server](https://github.com/Eisteesuchti/Frosthold-Server) — Chat-Server, Bridge, Build-Tools, Doku
+  - [Eisteesuchti/Frosthold-Server](https://github.com/Eisteesuchti/Frosthold-Server) — FrostMP-SkyMP-Fork (GPL-3.0), Build-Tools, Doku
   - [Eisteesuchti/Frosthold-Launcher](https://github.com/Eisteesuchti/Frosthold-Launcher) — Electron-Launcher
 
 Wenn du eine vollständige Kopie der GPL-3.0 brauchst: liegt im Repo unter
