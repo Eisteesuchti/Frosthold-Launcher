@@ -1,0 +1,12 @@
+# Optional runtime-config for CommonLibSSE-NG plugin loader.
+# SKSE liest das nicht zwingend; die Plugin-DLL enthält bereits einen
+# SKSEPluginInfo-Block im Code. Die Datei dient als Marker und kann für
+# zukünftige Konfigurationen (Log-Level, Toggle-Hotkey) erweitert werden.
+
+name = "FrostholdConsoleBlock"
+author = "Frosthold"
+version = "1.0.0"
+
+[log]
+# "trace" | "debug" | "info" | "warn" | "error" | "off"
+level = "info"

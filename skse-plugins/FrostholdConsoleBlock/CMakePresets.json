@@ -1,0 +1,38 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-windows-static-md",
+        "VCPKG_HOST_TRIPLET":   "x64-windows-static-md",
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
+      }
+    },
+    {
+      "name": "release",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "release-deploy",
+      "inherits": "release",
+      "description": "Release build that additionally copies the DLL into the live Skyrim Data folder after compile.",
+      "cacheVariables": {
+        "SKYRIM_DATA_DIR": "C:/Program Files (x86)/Steam/steamapps/common/Skyrim Special Edition/Data"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "release",        "configurePreset": "release",        "configuration": "Release" },
+    { "name": "release-deploy", "configurePreset": "release-deploy", "configuration": "Release" }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg/master/scripts/vcpkg.schema.json",
+  "name": "frosthold-console-block",
+  "version-string": "1.0.0",
+  "description": "SKSE plugin that drops keyboard input for the Skyrim console key so Frosthold's ^ voice range picker does not open the dev console.",
+  "supports": "windows & x64",
+  "dependencies": [
+    "spdlog",
+    "rapidcsv"
+  ]
+}

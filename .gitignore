@@ -25,3 +25,41 @@ Frosthold/
 # NICHT committen — kann >100 MB sein.
 backups/
 
+# Einmal-Artefakte aus Debug-/Repair-Sessions (Build-Logs, tmp-Sources,
+# On-the-fly-Patch-Skripte). Alles was *.log / *.tmp / *.patched /
+# *.vps-orig heisst ist per Definition temporaer.
+build-*.log
+deploy-*.log
+*.tmp
+*.patched
+*.vps-orig
+*.pyc
+
+# Ein-Mal-Shell-/Python-Tools fuers Debuggen auf dem VPS. Wenn sie
+# dauerhaft wichtig werden, in scripts/ verschieben und explizit adden.
+patch-*.py
+patch-*.sh
+scan-*.py
+diag.sh
+gdb-bt.cmd
+repack-*.sh
+inspect-*.sh
+check-*.sh
+install-*.sh
+bump-manifest.sh
+build-trigger.sh
+start-server.sh
+test-login.sh
+
+# Lokale Dev-Artefakte, die sich pro Maschine unterscheiden
+front-config.js
+server-settings.*.json
+manual-update-client.ps1
+
+# SKSE-Plugin: nur die Sources committen, kein CMake-Build-Output.
+skse-plugins/*/build/
+skse-plugins/*/build-log.txt
+# extern/ enthaelt Upstream-Abhaengigkeiten (CommonLibSSE), die separat
+# gecloned werden. Nicht ins Repo, siehe skse-plugins/README.md.
+skse-plugins/*/extern/
+

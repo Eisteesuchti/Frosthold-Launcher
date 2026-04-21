@@ -1065,6 +1065,12 @@ def _frosthold_chat_keys_for_client_settings(cfg: dict) -> Dict[str, Any]:
     u = (cfg.get("frosthold_chat_ws_url") or "").strip()
     if u:
         out["frosthold-chat-ws-url"] = u
+    # Wenn der Launcher eine explizite HTTP-URL fuer den chat-server kennt,
+    # reichen wir sie mit durch. Sonst leitet der Client sie aus der WS-URL ab
+    # (Port +1, siehe frostholdChatService.deriveHttpUrlFromWs).
+    http = (cfg.get("frosthold_chat_http_url") or "").strip()
+    if http:
+        out["frosthold-chat-http-url"] = http
     uid = (cfg.get("frosthold_chat_user_id") or "").strip()
     if uid:
         out["frosthold-chat-user-id"] = uid
@@ -1072,6 +1078,28 @@ def _frosthold_chat_keys_for_client_settings(cfg: dict) -> Dict[str, Any]:
     if sec:
         out["frosthold-chat-secret"] = sec
     return out
+
+
+def _frosthold_admin_keys_for_client_settings(cfg: dict, server_ip: str) -> Dict[str, Any]:
+    """
+    AdminService (frostmp-client) liest unter sp.settings['frostmp-client']
+    den Block 'frostholdAdmin' mit host/port/discordId, um die Admin-API des
+    Servers zu kontaktieren. Wenn der Launcher nichts konfiguriert hat, setzen
+    wir als Default den Haupt-Server-IP + den Standard-Port 3214 (wie auch
+    im Server-Addon frosthold-admin.cjs als Default konfiguriert). Ohne
+    diese Werte fiele die Admin-Panel-UI auf "127.0.0.1:3214" zurueck, was
+    aus Skyrim heraus ins Leere fetchen wuerde.
+    """
+    host = (cfg.get("frosthold_admin_host") or "").strip() or server_ip
+    try:
+        port = int(cfg.get("frosthold_admin_port") or 0) or 3214
+    except (TypeError, ValueError):
+        port = 3214
+    discord_id = (cfg.get("frosthold_admin_discord_id") or "").strip() or None
+    block: Dict[str, Any] = {"host": host, "port": port}
+    if discord_id:
+        block["discordId"] = discord_id
+    return {"frostholdAdmin": block}
 
 
 def write_client_settings(
@@ -1088,9 +1116,23 @@ def write_client_settings(
         "gameData": {"profileId": profile_id},
     }
     settings.update(_frosthold_chat_keys_for_client_settings(cfg))
+    settings.update(_frosthold_admin_keys_for_client_settings(cfg, server_ip))
     path = get_settings_path(skyrim_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+    # SkyrimPlatform-Installationen haben teilweise einen zweiten Plugins-
+    # Ordner direkt unter <SkyrimSE>/Platform/Plugins (neben dem kanonischen
+    # Data/Platform/Plugins). Damit alte Installationen nicht auf einem
+    # Mini-Stub haengenbleiben und frostmp-client die Settings eindeutig
+    # findet, spiegeln wir die Datei bei Existenz des Alt-Ordners.
+    alt_dir = skyrim_dir / "Platform" / "Plugins"
+    if alt_dir.is_dir():
+        try:
+            (alt_dir / path.name).write_text(
+                json.dumps(settings, indent=2), encoding="utf-8"
+            )
+        except OSError:
+            pass
     cleanup_legacy_client_files(skyrim_dir)
     return path
 
