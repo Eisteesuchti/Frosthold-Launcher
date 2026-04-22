@@ -14,3 +14,12 @@
 #include <cstdint>
 #include <atomic>
 #include <memory>
+#include <thread>
+#include <chrono>
+#include <filesystem>
+#include <string>
+
+// windows.h wird bereits indirekt via SKSE/Skyrim-Header gezogen, aber wir
+// nutzen darueber hinaus PostMessage/GetForegroundWindow/IsWindow direkt —
+// Expliziter Include macht die Abhaengigkeit klar.
+#include <windows.h>

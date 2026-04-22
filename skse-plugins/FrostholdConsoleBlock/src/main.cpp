@@ -1,7 +1,8 @@
-// ─── Frosthold Console Block (SKSE Plugin) ─────────────────────────────────
+// ─── Frosthold Console Block + Keyboard Reclaim (SKSE Plugin) ──────────────
 //
-// Zweck
-// =====
+// Zweck (zwei Responsibilities in einer DLL)
+// ==========================================
+// 1) CONSOLE-BLOCK (urspruenglicher Zweck):
 // Der Frosthold-Voice-Chat nutzt die Taste `^` (DIK_GRAVE, DxScanCode 0x29)
 // als Hotkey für den Range-Picker. Dieselbe Taste öffnet Vanilla-Skyrim die
 // Dev-Console. Ein rein JS-seitiges "beim menuOpen wieder zumachen"-Konstrukt
@@ -12,6 +13,14 @@
 // die Taste ist für Vanilla komplett tot — bleibt aber für Skyrim-Platform
 // nutzbar, weil SP seinen eigenen Keybind-Query-Pfad über DirectInput / die
 // Game-Input-Struct nutzt (er wird vor unserem Remap abgegriffen).
+//
+// 2) KEYBOARD-RECLAIM (erweiterter Zweck seit 1.1.0):
+// Voice-Aktivierung triggert Chromiums user_input_monitor_win, der Skyrims
+// DirectInput blockiert bis zum naechsten Alt-Tab. Dieses Plugin pollt eine
+// Flag-Datei und simuliert fuer Skyrim einen Alt-Tab-Roundtrip via
+// WM_ACTIVATE, damit BSInputDeviceManager seine Devices re-acquired — ohne
+// dass der User die Tasten muss. Details im Abschnitt "Keyboard-Reclaim-
+// Sub-System" weiter unten.
 //
 // Alternative, die wir bewusst NICHT gewählt haben:
 //   - Hook auf MenuOpenCloseEvent → wie das JS-Fallback, visueller Flash.
@@ -46,6 +55,137 @@ namespace {
     // Counter, damit wir im Log sehen können wie oft der Block angeschlagen
     // hat — ohne jeden einzelnen Key zu loggen (wäre Spam).
     std::atomic<std::uint64_t> g_blockedCount{ 0 };
+
+    // ─── Keyboard-Reclaim-Sub-System ─────────────────────────────────────────
+    //
+    // Problem
+    // =======
+    // Sobald Chromium (via Skyrim-Platform-CEF) getUserMedia() fuer Voice-Chat
+    // anruft, startet es intern den user_input_monitor_win. Der registriert
+    // sich per RegisterRawInputDevices auf HID-Keyboards (um Tipp-Geraeusche
+    // fuer AEC zu erkennen) und blockiert dabei Skyrims DirectInput-Poll-Loop.
+    // Symptom: Tastatur komplett tot bis der User Alt-Tab aus dem Spiel macht
+    // und wieder rein — Alt-Tab schickt WM_ACTIVATEAPP ans Skyrim-Fenster,
+    // was BSInputDeviceManager zum Re-Acquire seiner DirectInput-Devices
+    // zwingt.
+    //
+    // Warum nicht in CEF fixen
+    // ========================
+    // setFocused(true/false) im CEF-Browser togglet nur CEF-internen Input-
+    // State — die Raw-Input-Registration ist aber process-weit. Bounces auf
+    // CEF-Ebene greifen nachweislich (frostmp-browser.log zeigt sauber
+    // focused=true/false-Toggles), aendern aber nichts am user_input_monitor-
+    // Grab. Einziger Weg: dem Skyrim-HWND explizit WM_ACTIVATE schicken,
+    // wie es Windows beim Alt-Tab macht.
+    //
+    // Kommunikation CEF → Plugin
+    // ==========================
+    // CEF-JS hat keinen WinAPI-Zugriff. SkyrimPlatforms Node-Bridge (erreichbar
+    // aus skymp5-client TS) schreibt eine Flag-Datei; der Worker-Thread hier
+    // pollt den Pfad alle 50ms, loescht das Flag bei Fund, und posted die
+    // WM_ACTIVATE-Sequenz. File-Flag wurde gegenueber UDP/Shared-Memory
+    // bevorzugt, weil (a) trivial zu debuggen, (b) keine zusaetzlichen Ports
+    // im VPN/Firewall-Setup, (c) TS-Seite kann require("fs") direkt.
+    //
+    // Flag-Pfad: Documents\My Games\Skyrim Special Edition\SKSE\
+    //            frosthold-kb-reclaim.flag
+    //   (gleicher Ordner wie FrostholdConsoleBlock.log — SKSE-Standard).
+
+    // HWND-Cache: wird beim SKSE::MessagingInterface::kDataLoaded-Event
+    // via GetForegroundWindow() gesetzt. Zu diesem Zeitpunkt hat Skyrim
+    // die Fenster-Aktivierung sicher abgeschlossen und ist (im Normalfall)
+    // Foreground. FindWindowW waere ein Alternativ-Weg, aber window title
+    // variiert zwischen AE-Versionen ("Skyrim Special Edition" vs.
+    // "Skyrim Anniversary Edition") — GetForegroundWindow ist unabhaengig
+    // davon. Fallback: falls beim Reclaim das HWND leer/invalid ist,
+    // probiert der Worker einen Lazy-Lookup.
+    std::atomic<HWND> g_skyrimHwnd{ nullptr };
+
+    // Worker-Thread-Kontrolle. Wir setzen g_workerShutdown nur fuer
+    // Ordentlichkeit — Skyrim-Exit reisst den gesamten Process mit, der
+    // Worker stirbt dann ohnehin. Detach statt Join aus demselben Grund.
+    std::atomic<bool> g_workerShutdown{ false };
+    std::thread g_kbWorker;
+
+    std::filesystem::path GetReclaimFlagPath() {
+        auto logDir = SKSE::log::log_directory();
+        if (logDir) {
+            return *logDir / L"frosthold-kb-reclaim.flag";
+        }
+        // Fallback ueber USERPROFILE. Sollte nicht passieren, weil SKSE den
+        // Ordner zuverlaessig liefert, aber defensiv ist gratis.
+        std::filesystem::path fallback;
+        wchar_t* home = nullptr;
+        size_t len = 0;
+        if (_wdupenv_s(&home, &len, L"USERPROFILE") == 0 && home) {
+            fallback = std::filesystem::path(home)
+                / L"Documents" / L"My Games"
+                / L"Skyrim Special Edition" / L"SKSE"
+                / L"frosthold-kb-reclaim.flag";
+            free(home);
+        }
+        return fallback;
+    }
+
+    // Sendet die Alt-Tab-Sequenz an das Skyrim-Fenster. PostMessage statt
+    // SendMessage, damit wir nicht auf den Skyrim-Main-Thread warten — die
+    // Messages landen in der Queue und werden im naechsten Pump verarbeitet.
+    void ReclaimKeyboardFocus() {
+        HWND hwnd = g_skyrimHwnd.load(std::memory_order_acquire);
+        if (!hwnd || !IsWindow(hwnd)) {
+            // Cache invalid — einmal lazy re-cachen. Das passiert normalerweise
+            // nur, wenn der User waehrend DataLoaded zufaellig Alt-Tab gedrueckt
+            // hatte.
+            HWND fg = GetForegroundWindow();
+            if (fg && IsWindow(fg)) {
+                DWORD wndPid = 0;
+                GetWindowThreadProcessId(fg, &wndPid);
+                if (wndPid == GetCurrentProcessId()) {
+                    g_skyrimHwnd.store(fg, std::memory_order_release);
+                    hwnd = fg;
+                    if (g_log) g_log->info("KB-Reclaim: HWND lazy-recached via GetForegroundWindow.");
+                }
+            }
+        }
+        if (!hwnd || !IsWindow(hwnd)) {
+            if (g_log) g_log->warn("KB-Reclaim: kein gueltiges HWND, Reclaim skipped.");
+            return;
+        }
+
+        // WM_ACTIVATE WA_INACTIVE -> WA_ACTIVE. MAKEWPARAM(state, minimized).
+        // Skyrims BSInputDeviceManager re-acquired DirectInput beim WA_ACTIVE
+        // (genau wie bei echtem Alt-Tab zurueck ins Spiel). lParam=0 bedeutet
+        // "kein previous-HWND" fuer WA_INACTIVE bzw. "kein activated-from-HWND"
+        // fuer WA_ACTIVE — das ist die Vanilla-Semantik wenn Windows selbst
+        // den Activate-Event dispatcht.
+        PostMessageW(hwnd, WM_ACTIVATE, MAKEWPARAM(WA_INACTIVE, 0), 0);
+        PostMessageW(hwnd, WM_ACTIVATE, MAKEWPARAM(WA_ACTIVE,   0), 0);
+        if (g_log) {
+            g_log->info("KB-Reclaim: WM_ACTIVATE INACTIVE/ACTIVE posted to HWND=0x{:x}",
+                reinterpret_cast<std::uintptr_t>(hwnd));
+        }
+    }
+
+    void KbReclaimWorkerLoop() {
+        const auto flagPath = GetReclaimFlagPath();
+        if (g_log) {
+            g_log->info("KB-Reclaim-Worker gestartet — polling alle 50ms, flag='{}'",
+                flagPath.string());
+        }
+        std::error_code ec;
+        while (!g_workerShutdown.load(std::memory_order_acquire)) {
+            ec.clear();
+            if (!flagPath.empty() && std::filesystem::exists(flagPath, ec) && !ec) {
+                // Flag zuerst loeschen, dann reacten. Umgekehrte Reihenfolge
+                // koennte bei einer schnellen zweiten Anforderung die neue
+                // Anforderung verschlucken.
+                std::filesystem::remove(flagPath, ec);
+                ReclaimKeyboardFocus();
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+        if (g_log) g_log->info("KB-Reclaim-Worker beendet.");
+    }
 
     // ─── Input-Sink ────────────────────────────────────────────────────────
     //
@@ -150,11 +290,49 @@ namespace {
         if (g_log) g_log->info("Console key filter installed on BSInputDeviceManager.");
     }
 
+    // Cacht das Skyrim-HWND und startet den KB-Reclaim-Worker. Wird beim
+    // kDataLoaded-Event aufgerufen, wo Skyrim sein Hauptfenster definitiv
+    // erzeugt und (meistens) Foreground gezogen hat.
+    void InstallKbReclaim() {
+        HWND fg = GetForegroundWindow();
+        if (fg && IsWindow(fg)) {
+            DWORD wndPid = 0;
+            GetWindowThreadProcessId(fg, &wndPid);
+            if (wndPid == GetCurrentProcessId()) {
+                g_skyrimHwnd.store(fg, std::memory_order_release);
+                if (g_log) {
+                    g_log->info("KB-Reclaim: Skyrim-HWND gecached (HWND=0x{:x}) bei kDataLoaded.",
+                        reinterpret_cast<std::uintptr_t>(fg));
+                }
+            } else {
+                if (g_log) {
+                    g_log->warn("KB-Reclaim: GetForegroundWindow bei kDataLoaded gehoert anderem Process "
+                                "(pid={} vs. self={}) — Worker cached lazy beim ersten Flag-Trigger.",
+                                wndPid, GetCurrentProcessId());
+                }
+            }
+        } else {
+            if (g_log) {
+                g_log->warn("KB-Reclaim: GetForegroundWindow lieferte NULL — Worker cached lazy.");
+            }
+        }
+
+        if (!g_kbWorker.joinable()) {
+            try {
+                g_kbWorker = std::thread(KbReclaimWorkerLoop);
+                g_kbWorker.detach();  // detach, weil Process-Exit den Thread mitreisst
+            } catch (const std::exception& ex) {
+                if (g_log) g_log->error("KB-Reclaim: Worker-Thread konnte nicht gestartet werden: {}", ex.what());
+            }
+        }
+    }
+
     void OnSKSEMessage(SKSE::MessagingInterface::Message* msg) {
         if (!msg) return;
         switch (msg->type) {
         case SKSE::MessagingInterface::kDataLoaded:
             InstallSink();
+            InstallKbReclaim();
             break;
         default:
             break;
@@ -186,7 +364,7 @@ extern "C" __declspec(dllexport) SKSE::PluginVersionData SKSEPlugin_Version = []
     SKSE::PluginVersionData v;
     v.PluginName("FrostholdConsoleBlock");
     v.AuthorName("Frosthold");
-    v.PluginVersion({ 1, 0, 0, 0 });
+    v.PluginVersion({ 1, 1, 0, 0 });
     // AE-Struct-Layout ab 1.6.629 — sonst weigert sich der AE-SKSE-Loader.
     v.UsesAddressLibrary(true);
     v.UsesStructsPost629(true);
