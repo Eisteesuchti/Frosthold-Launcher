@@ -8,6 +8,101 @@ heraus in einen aktiven To-Do-Plan.
 
 ## Später geplant
 
+### Horse-Sync-Fix für `.spawnhorse`
+
+**Kontext:** `.spawnhorse` (siehe `chat-server/server.mjs` +
+`frostholdChatService.ts`) spawnt das Pferd aktuell **lokal** beim
+ausführenden GM via `player.placeAtMe(baseForm, 1, false, false)`. Das Pferd
+ist für den GM reitbar, aber andere Spieler sehen es entweder gar nicht oder
+an falscher Position — SkyMP syncht Mount-States (`actor.setVehicle()`) nicht
+sauber.
+
+**Ziel:** `.spawnhorse` spawnt ein Pferd, das für alle Spieler sichtbar und
+vom GM reitbar ist. Bonus: Pferd bleibt persistent, bis es abgespeckt oder
+vom GM wieder entfernt wird.
+
+**Mögliche Bausteine:**
+- Server-seitiger Actor-Spawn über skymp5-server-Addon (statt Client-
+  `placeAtMe`). Addon hängt sich an `mp.createActor()` oder an eine
+  äquivalente Low-Level-API und registriert die Form dauerhaft im Worldspace.
+- Mount/Dismount-Events via Papyrus-Hook (`OnSit`/`OnDismount` auf der
+  Horse-Actor-Form) an den Server senden, damit der Spieler-Movement-Stream
+  an die Horse-Position gekoppelt wird.
+- Lore-freundliche Whitelist erweitern (aktuell: vanilla-Horses mit Sattel;
+  später: farbig unterscheidbare Variationen für verschiedene RP-Fraktionen).
+
+**Status:** MVP (v1) läuft lokal; Sync-Arbeit ist ein eigener Brocken (SkyMP-
+Mount-Limit ist bekannt), daher hier parken.
+
+---
+
+### World-Loot-Lock v2 (Dungeon/Haus/Drop-Tracking)
+
+**Kontext:** `Frosthold/skymp5-server-addons/frosthold-world-loot-lock.cjs`
+(v1) sperrt aktuell nur im **Exterior** (Tamriel + Solstheim) alle Items aus
+`chat-server/items.json`, mit Ausnahme der Kategorie `Zutat` (Pflanzen /
+Kräuter). Alle Interiors sind pass-through, Mob-Loot läuft weiterhin über
+`frosthold-loot.cjs`.
+
+**v2 soll:**
+1. **Interior-Unterscheidung:** Dungeons, Höhlen, Ruinen sind lootbar;
+   Wohnhäuser und Shops sind gesperrt. Klassifizierung über
+   `mp.get(refrId, "locationalData").cellOrWorldDesc` gegen eine kuratierte
+   Liste von Dungeon-Cell-FormIDs (Vanilla + DLC). Alternativ Keyword-Check
+   (`LocTypeDungeon` / `LocTypeStore` / `LocTypeHouse` auf dem Parent-
+   Location-Record).
+2. **Drop-Tracking:** Wenn ein Spieler ein Item im Exterior/gesperrten
+   Interior fallen lässt, muss er (und nur er) es wieder aufheben können.
+   Dafür ein In-Memory-Set `<refrId, ownerProfileId>` pflegen, das beim
+   Drop-Event geschrieben und beim onActivate gelesen wird. Persistenz nur,
+   falls gewünscht (wird unhandlich bei 1000+ Drops).
+3. **FLOR-Support:** Wenn FLOR-Records (Pflanzen direkt in der Welt, nicht
+   als Item-Drops) doch onActivate triggern, sauber durchreichen ohne
+   Block. Aktuell scheinen sie nicht zu triggern, aber v2 sollte das
+   explizit behandeln.
+4. **Throttle für Block-Feedback:** v1 blockt silently; v2 sollte eine
+   kurze System-Notification schicken ("Dieses Item lässt sich hier nicht
+   mitnehmen") mit 3s-Cooldown pro Spieler, damit Kinder-RP nicht im
+   Unklaren sind, warum Activate nichts tut.
+
+**Status:** v1 deckt Exterior-Minimalvariante ab; v2 ist Nice-to-have und
+kommt nur, wenn die Server-Community konkret fordert, dass Häuser/Dungeons
+anders behandelt werden sollen.
+
+---
+
+### Live-Enchantment-Effekte für Unique-Items
+
+**Kontext:** Der Live-Stats-Bridge (`query_unique_stats` →
+`frostholdChatService.ts` → `Weapon.getBaseDamage/getEnchantment/getName`)
+liest aktuell pro Unique-Item: Basis-Schaden, Gewicht, Name der
+Verzauberung. **Nicht** gelesen werden die eigentlichen Effekte
+(`Enchantment.getEffect(i)` + `getMagnitude` / `getDuration` /
+`getArea`), weil das pro Item mehrere Effekte mit unterschiedlichen
+Units (Punkte, Sekunden, %) sind und die UI-Darstellung Arbeit kostet.
+
+**Ziel:** Im Unique-Detail-Modal neben der Enchantment-Bezeichnung auch die
+einzelnen Effekte mit Magnitude/Duration als saubere Liste anzeigen, z. B.
+"Absorbiert 25 Lebenspunkte" oder "Feuerschaden 15 pro Sekunde, 5 Sekunden".
+
+**Mögliche Bausteine:**
+- `Enchantment.from(weapon.getEnchantment())` + `.getEffectCount()` +
+  Schleife über `.getNthEffect(i)` (gibt eine `MagicEffect`-Form zurück).
+- Magnitude/Duration/Area liegen auf dem `EffectItem`, nicht auf dem
+  MagicEffect direkt — die API dafür existiert in SkyrimPlatform als
+  `Enchantment.getEffectMagnitude(i) / getEffectDuration(i) / getEffectArea(i)`.
+- Localisiertes Mapping von `MagicEffect.getName()` auf deutsche Texte
+  (manuelle Tabelle, weil die Vanilla-Namen teils englisch bleiben in den
+  SkyMP-Strings).
+- Cache-Layer auf Server-Seite: Effekt-Listen sind stabil pro Form, hier
+  ist ein permanentes Cache (kein 2min-TTL) vertretbar, evtl. sogar als
+  Teil des `unique-shop.mjs`-Schemas manuell gepflegt.
+
+**Status:** Vorgemerkt; v1 des Detail-Modals reicht für die meisten
+Spieler, weil der Enchantment-Name im Tooltip schon Lore liefert.
+
+---
+
 ### React-Login-UI mit Discord-Anbindung *(weitaus später)*
 **Kontext:** Der Original-SkyMP-Tree (`skymp-main/skymp5-front`) liefert eine
 fertige React-App mit Skyrim-themed Components (`SkyrimFrame`, `SkyrimInput`,

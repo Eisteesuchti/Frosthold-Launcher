@@ -881,6 +881,7 @@ def install_client_dist_from_zip(
                 progress_cb(i + 1, total)
 
     cleanup_legacy_client_files(skyrim_dir)
+    ensure_frosthold_plugins_enabled(skyrim_dir)
     return True
 
 
@@ -906,6 +907,7 @@ def install_client_dist_from_folder(
             progress_cb(i + 1, total)
 
     cleanup_legacy_client_files(skyrim_dir)
+    ensure_frosthold_plugins_enabled(skyrim_dir)
     return True
 
 
@@ -1052,6 +1054,111 @@ def cleanup_legacy_client_files(skyrim_dir: Path) -> List[str]:
     return removed
 
 
+# Frosthold-eigene Plugins, die in plugins.txt enabled werden muessen, damit
+# Skyrim die zugehoerigen Records ueberhaupt laedt. Einfache ESLs ohne Eintrag
+# in plugins.txt werden von Skyrim SE/AE stillschweigend ignoriert.
+FROSTHOLD_REQUIRED_PLUGINS: List[str] = [
+    "FrostholdKeys.esl",
+]
+
+
+def _skyrim_appdata_dir() -> Optional[Path]:
+    """Gibt den AppData-Pfad von Skyrim SE zurueck (%LOCALAPPDATA%/Skyrim Special Edition)."""
+    base = os.environ.get("LOCALAPPDATA")
+    if not base:
+        return None
+    p = Path(base) / "Skyrim Special Edition"
+    return p
+
+
+def ensure_frosthold_plugins_enabled(skyrim_dir: Path) -> List[str]:
+    """Sorgt dafuer, dass unsere Frosthold-ESLs in plugins.txt enabled sind.
+
+    - Kopiert fehlende Plugins NICHT (das macht der ZIP-Install).
+    - Prueft: liegt das Plugin in <Data>?
+    - Falls ja: stellt sicher, dass "*FrostholdKeys.esl" in der User-plugins.txt
+      steht (%LOCALAPPDATA%/Skyrim Special Edition/plugins.txt). Wenn das
+      Plugin bereits gelistet, aber disabled (ohne fuehrendes '*'), aktiviert
+      es die Zeile.
+
+    Gibt die tatsaechlich ergaenzten/aktivierten Plugin-Dateinamen zurueck.
+    """
+    changed: List[str] = []
+    appdata = _skyrim_appdata_dir()
+    if not appdata:
+        return changed
+
+    data_dir = skyrim_dir / "Data"
+    plug_txt = appdata / "plugins.txt"
+
+    try:
+        lines: List[str] = []
+        if plug_txt.is_file():
+            # plugins.txt wird von Skyrim in UTF-16 LE geschrieben, neuere
+            # Versionen auch mal UTF-8 mit BOM. Wir lesen tolerant und
+            # schreiben zurueck im gelesenen Format, um den Loader nicht zu
+            # verunsichern.
+            raw = plug_txt.read_bytes()
+            try:
+                if raw.startswith(b"\xff\xfe") or raw.startswith(b"\xfe\xff"):
+                    text = raw.decode("utf-16")
+                    encoding = "utf-16"
+                elif raw.startswith(b"\xef\xbb\xbf"):
+                    text = raw.decode("utf-8-sig")
+                    encoding = "utf-8-sig"
+                else:
+                    text = raw.decode("utf-8", errors="replace")
+                    encoding = "utf-8"
+            except UnicodeDecodeError:
+                text = raw.decode("latin-1")
+                encoding = "utf-8"
+            lines = text.splitlines()
+        else:
+            encoding = "utf-8"
+            plug_txt.parent.mkdir(parents=True, exist_ok=True)
+
+        mutated = False
+        for plugin in FROSTHOLD_REQUIRED_PLUGINS:
+            if not (data_dir / plugin).is_file():
+                continue
+            target = plugin.lower()
+
+            found_idx = -1
+            for idx, ln in enumerate(lines):
+                stripped = ln.strip()
+                key = stripped.lstrip("*").strip().lower()
+                if key == target:
+                    found_idx = idx
+                    break
+
+            if found_idx < 0:
+                lines.append(f"*{plugin}")
+                changed.append(plugin)
+                mutated = True
+            else:
+                ln = lines[found_idx].strip()
+                if not ln.startswith("*"):
+                    lines[found_idx] = f"*{plugin}"
+                    changed.append(plugin)
+                    mutated = True
+
+        if mutated:
+            new_text = "\r\n".join(lines)
+            if not new_text.endswith("\r\n"):
+                new_text += "\r\n"
+            if encoding == "utf-16":
+                plug_txt.write_bytes(b"\xff\xfe" + new_text.encode("utf-16-le"))
+            elif encoding == "utf-8-sig":
+                plug_txt.write_bytes(b"\xef\xbb\xbf" + new_text.encode("utf-8"))
+            else:
+                plug_txt.write_bytes(new_text.encode("utf-8"))
+    except OSError:
+        # plugins.txt nicht schreibbar -> still weitermachen, der Spieler kann
+        # das Plugin notfalls manuell aktivieren.
+        pass
+    return changed
+
+
 def _frosthold_chat_keys_for_client_settings(cfg: dict) -> Dict[str, Any]:
     """
     FrostholdChatService (frostmp-client) liest unter sp.settings['frostmp-client']:
@@ -1080,6 +1187,35 @@ def _frosthold_chat_keys_for_client_settings(cfg: dict) -> Dict[str, Any]:
     return out
 
 
+def _read_launcher_discord_id_from_session() -> Optional[str]:
+    """
+    Liest die Discord-ID aus der vom Electron-Launcher gepflegten
+    discord-session.json. Diese Datei liegt in %APPDATA%/frostholdrp-launcher
+    (Electron userData) und wird nach erfolgreichem OAuth2-Login geschrieben
+    (vgl. main.js: saveDiscordSession).
+
+    Wird als Fallback genutzt, wenn der User `frosthold_admin_discord_id` nicht
+    manuell in frostmp-launcher.json gesetzt hat — Policy des GM-Panels ist
+    kein Passwort/Discord-Prompt, also mappen wir die bereits verifizierte
+    Login-Identitaet automatisch auf den AdminService-Discord-Kontext.
+    """
+    candidates: List[Path] = []
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        candidates.append(Path(appdata) / "frostholdrp-launcher" / "discord-session.json")
+        candidates.append(Path(appdata) / "FrostholdRP Launcher" / "discord-session.json")
+    for p in candidates:
+        try:
+            if p.is_file():
+                data = json.loads(p.read_text(encoding="utf-8"))
+                did = str(data.get("discordId") or "").strip()
+                if did:
+                    return did
+        except Exception:
+            continue
+    return None
+
+
 def _frosthold_admin_keys_for_client_settings(cfg: dict, server_ip: str) -> Dict[str, Any]:
     """
     AdminService (frostmp-client) liest unter sp.settings['frostmp-client']
@@ -1089,6 +1225,13 @@ def _frosthold_admin_keys_for_client_settings(cfg: dict, server_ip: str) -> Dict
     im Server-Addon frosthold-admin.cjs als Default konfiguriert). Ohne
     diese Werte fiele die Admin-Panel-UI auf "127.0.0.1:3214" zurueck, was
     aus Skyrim heraus ins Leere fetchen wuerde.
+
+    Fuer die discordId gilt: explizite Einstellung in frostmp-launcher.json
+    (`frosthold_admin_discord_id`) hat Vorrang. Sonst uebernehmen wir die
+    Discord-ID aus der vom Launcher schon verifizierten OAuth-Session
+    (discord-session.json). Damit oeffnet sich das GM-Panel bei F10 fuer
+    whitelisted Admins automatisch, ohne dass der User irgendwo eine ID
+    eintippen muss.
     """
     host = (cfg.get("frosthold_admin_host") or "").strip() or server_ip
     try:
@@ -1096,6 +1239,8 @@ def _frosthold_admin_keys_for_client_settings(cfg: dict, server_ip: str) -> Dict
     except (TypeError, ValueError):
         port = 3214
     discord_id = (cfg.get("frosthold_admin_discord_id") or "").strip() or None
+    if not discord_id:
+        discord_id = _read_launcher_discord_id_from_session()
     block: Dict[str, Any] = {"host": host, "port": port}
     if discord_id:
         block["discordId"] = discord_id
